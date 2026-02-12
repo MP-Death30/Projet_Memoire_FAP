@@ -1,13 +1,52 @@
-# 1. Ignorer tout le contenu du dossier dataset
-dataset/*
+# --- Environnements Virtuels ---
+.venv/
+venv/
+env/
+bin/
+obj/
 
-# 2. Autoriser le dossier Plane_caracteristic et tout son contenu
-!dataset/Plane_caracteristic/
+# --- Artefacts Python ---
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
 
-# 3. Gérer le dossier UE_air_passenger_between_ai...
-# On autorise le dossier parent mais on ignore son contenu par défaut
-!dataset/UE_air_passenger_between_ai*/
-dataset/UE_air_passenger_between_ai*/*
+# --- Données et Modèles (Critique) ---
+# On ignore tout le contenu, mais on garde les dossiers via un fichier .gitkeep si nécessaire
+data/raw/*
+data/processed/*
+models/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!models/.gitkeep
 
-# 4. Autoriser spécifiquement le sous-dossier GZ
-!dataset/UE_air_passenger_between_ai*/GZ/
+# Fichiers de données volumineux spécifiques
+*.csv
+*.parquet
+*.jsonl
+*.h5
+*.pth
+*.pkl
+*.onnx
+*.weights
+
+# --- Configuration et Secrets ---
+.env
+.flaskenv
+config.local.yaml
+secrets.yaml
+
+# --- Notebooks ---
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# --- OS / IDE ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
