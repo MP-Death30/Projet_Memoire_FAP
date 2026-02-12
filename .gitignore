@@ -1,1 +1,13 @@
+# 1. Ignorer tout le contenu du dossier dataset
 dataset/*
+
+# 2. Autoriser le dossier Plane_caracteristic et tout son contenu
+!dataset/Plane_caracteristic/
+
+# 3. Gérer le dossier UE_air_passenger_between_ai...
+# On autorise le dossier parent mais on ignore son contenu par défaut
+!dataset/UE_air_passenger_between_ai*/
+dataset/UE_air_passenger_between_ai*/*
+
+# 4. Autoriser spécifiquement le sous-dossier GZ
+!dataset/UE_air_passenger_between_ai*/GZ/
