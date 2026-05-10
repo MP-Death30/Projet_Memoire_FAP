@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from pathlib import Path
 
 def expand_date_ranges(df, country_col):
@@ -20,6 +21,7 @@ def split_monthly_to_daily_2024():
     BASE_DIR = Path(__file__).resolve().parents[3]
     DATA_RAW = BASE_DIR / "data" / "raw"
     TRAFFIC_FILE = BASE_DIR / "data" / "processed" / "transavia_orly_network_traffic.parquet"
+    COEFF_FILE = DATA_RAW / "Coefficients_repartition" / "coefficient_repartition_jour.csv"
     VACANCES_FILE = DATA_RAW / "Evenement_pays" / "Vacances_scolaire_2024_2027.csv"
     EVENTS_FILE = DATA_RAW / "Evenement_pays" / "Evenement_sport_tech_business_2023_2027.csv"
     OUTPUT_FILE = BASE_DIR / "data" / "processed" / "transavia_orly_daily_2024.parquet"
@@ -37,25 +39,66 @@ def split_monthly_to_daily_2024():
     df_traffic = df_traffic.rename(columns={'value': 'value_mensuelle'})
 
     # 4. Ingestion et vectorisation des référentiels conjoncturels (Vacances et Événements)
+    
+    # Dictionnaire de standardisation (à mapper sur le format de pays_depart/arrivee de df_traffic)
+    COUNTRY_MAPPING = {
+        'DE': 'Allemagne',
+        'DK': 'Danemark',
+        'EL': 'Grèce',
+        'ES': 'Espagne',
+        'FR': 'France',
+        'IE': 'Irlande',
+        'IT': 'Italie',
+        'MT': 'Malte',
+        'PT': 'Portugal',
+        'SE': 'Suède',
+    }
+
     df_vac = pd.read_csv(VACANCES_FILE, sep=';', encoding='utf-8')
+    df_vac['pays'] = df_vac['pays'].replace(COUNTRY_MAPPING) # Alignement de la nomenclature
     df_vac['date_debut'] = pd.to_datetime(df_vac['date_debut'], format='%d/%m/%Y')
     df_vac['date_fin'] = pd.to_datetime(df_vac['date_fin'], format='%d/%m/%Y')
     df_vac_daily = expand_date_ranges(df_vac, 'pays').rename(columns={'flag': 'is_vacance'})
 
     df_evt = pd.read_csv(EVENTS_FILE, sep=';', encoding='utf-8')
+    df_evt['pays'] = df_evt['pays'].replace(COUNTRY_MAPPING) # Alignement de la nomenclature
     df_evt['date_debut'] = pd.to_datetime(df_evt['date_debut'], format='%d/%m/%Y')
     df_evt['date_fin'] = pd.to_datetime(df_evt['date_fin'], format='%d/%m/%Y')
     df_evt_daily = expand_date_ranges(df_evt, 'pays').rename(columns={'flag': 'is_event'})
 
-    # 5. Instanciation du calendrier isotrope annuel
+    # 5. Instanciation du calendrier isotrope annuel et extraction des caractéristiques
     dates = pd.date_range(start='2024-01-01', end='2024-12-31', freq='D')
     cal = pd.DataFrame({'date': dates})
-    cal['period'] = cal['date'].dt.strftime('%Y-%m') # Clé de jointure pour le trafic mensuel
-    cal['is_weekend'] = cal['date'].dt.dayofweek >= 5 # 5=Samedi, 6=Dimanche
+    cal['period'] = cal['date'].dt.strftime('%Y-%m') 
+    cal['jour_du_mois'] = cal['date'].dt.day
+    cal['type_jour'] = np.where(cal['date'].dt.dayofweek >= 5, 'w', 's') # Mapping de nomenclature
+    cal['days_in_month'] = cal['date'].dt.days_in_month
+
+    # 6. Intégration du signal de saisonnalité structurel via matrice de coefficients
+    df_coeffs = pd.read_csv(COEFF_FILE, sep=';', encoding='utf-8')
+    cal = cal.merge(df_coeffs, on=['jour_du_mois', 'type_jour'], how='left')
+
+    # Sélection vectorisée de la colonne appropriée selon la longueur du mois
+    conditions = [
+        cal['days_in_month'].isin([28, 29]),
+        cal['days_in_month'] == 30,
+        cal['days_in_month'] == 31
+    ]
+    choices = [
+        cal['coefficient_28_29'],
+        cal['coefficient_30'],
+        cal['coefficient_31']
+    ]
     
-    # 6. Intégration du signal de saisonnalité structurel (Week-end)
-    cal['base_weight'] = 1.0 # Poids unitaire de base
-    cal.loc[cal['is_weekend'], 'base_weight'] *= MULT_WEEKEND # Application du choc hebdo
+    # Assignation du poids de base. Les valeurs nulles issues des jours inexistants sont forcées à 0.0
+    cal['base_weight'] = np.select(conditions, choices, default=0.0)
+
+    # Nettoyage de l'espace mémoire
+    cols_to_drop = [
+        'jour_du_mois', 'type_jour', 'days_in_month', 
+        'coefficient_28_29', 'coefficient_30', 'coefficient_31'
+    ]
+    cal = cal.drop(columns=cols_to_drop)
 
     # 7. Distribution du trafic mensuel sur la matrice journalière (Jointure 1 à n)
     df_daily = df_traffic.merge(cal[['period', 'date', 'base_weight']], on='period', how='inner')

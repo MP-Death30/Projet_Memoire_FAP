@@ -13,18 +13,19 @@ def filter_transavia_orly_network():
     transavia_destinations = {
         "LFMN", "LFBO", "LPPR", "LPPT", "LIRF", "LEMD", "LEBL", "LEZL", "LGIR",
         "EDDB", "LFTH", "LPFR", "LGAV", "LFBZ", "LEMG", "LFMP", "LEPA", "LFMT",
-        "LICJ", "LFML", "LKPR", "ESSA", "LTFM", "LIPZ", "LEMH", "LIBD", "LIRN",
-        "LGSR", "LGMK", "EKCH", "LOWW", "LGKR", "LEAL", "EIDW", "LICC", "LATI",
-        "LPMA", "LGRP", "LIMC", "LDSP", "LEVC", "LDDU", "LIBR", "GCTS", "LGSA",
-        "LGTS", "LMML", "LIEO", "LIRP", "LIEE", "GCRR", "GCLP", "LTAI", "LTBJ",
-        "EGPH"
+        "LICJ", "LFML", "ESSA", "LTFM", "LIPZ", "LEMH", "LIBD", "LIRN", "LGSR",
+        "LGMK", "EKCH", "LOWW", "LGKR", "LEAL", "EIDW", "LICC", "LATI", "LPMA",
+        "LGRP", "LIMC", "LEVC", "LIBR", "GCTS", "LGSA", "LGTS", "LMML", "LIEO",
+        "LIRP", "LIEE", "GCRR", "GCLP", "LTAI", "LTBJ", "EGPH"
     }
 
     hub = "LFPO"
 
     df = pd.read_parquet(INPUT_FILE)
 
-    df = df[df['period'].str[:4].astype(int) >= 2017]
+    #df = df[df['period'].str[:4].astype(int) >= 2017]
+    # Restriction temporelle : 2023 à 2024
+    df = df[df['period'].str[:4].astype(int).between(2023, 2024)]
 
     def is_orly_transavia_route(route_str):
         parts = str(route_str).split('_')
@@ -52,7 +53,7 @@ def filter_transavia_orly_network():
 
     df_filtered.to_parquet(OUTPUT_FILE, index=False)
     
-    print(f"Réseau Transavia Orly (>= 2017, bidirectionnel strict) : {len(df_filtered)} enregistrements conservés.")
+    print(f"Réseau Transavia Orly (2023 & 2024, bidirectionnel strict) : {len(df_filtered)} enregistrements conservés.")
     print(f"Fichier généré : {OUTPUT_FILE}")
 
 if __name__ == "__main__":
