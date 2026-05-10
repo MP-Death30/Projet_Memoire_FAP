@@ -3,8 +3,8 @@ from pathlib import Path
 
 def export_to_csv():
     BASE_DIR = Path(__file__).resolve().parents[3]
-    INPUT_FILE = BASE_DIR / "data" / "processed" / "transavia_orly_daily_2024.parquet"
-    OUTPUT_FILE = BASE_DIR / "data" / "processed" / "transavia_orly_daily_2024.csv"
+    INPUT_FILE = BASE_DIR / "data" / "processed" / "dataset_lstm.parquet"
+    OUTPUT_FILE = BASE_DIR / "data" / "processed" / "dataset_lstm.csv"
 
     if not INPUT_FILE.exists():
         print(f"Erreur : Fichier introuvable - {INPUT_FILE}")
