@@ -1,3 +1,5 @@
+# Traitement des dossiers gzip + nettoyage des fichiers
+
 import pandas as pd
 
 def load_and_melt_data(file_path):
