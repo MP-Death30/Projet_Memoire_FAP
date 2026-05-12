@@ -1,5 +1,6 @@
 from pathlib import Path
 import pandas as pd
+import numpy as np
 
 # Configuration des chemins
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -61,6 +62,13 @@ def generate_dataset():
     flags = ['evenement_depart', 'vacances_depart', 'evenement_arrivee', 'vacances_arrivee']
     df_main[flags] = df_main[flags].fillna(0).astype(int)
 
+    # --- INJECTION DU BRUIT STOCHASTIQUE ---
+    # Application d'une déviation standard de 8% sur la demande théorique
+    noise = np.random.normal(loc=1.0, scale=0.08, size=len(df_main))
+    df_main['value_jour'] = (df_main['value_jour'] * noise).round().astype(int)
+    # Troncature des valeurs aberrantes (impossible d'avoir des passagers négatifs)
+    df_main['value_jour'] = df_main['value_jour'].clip(lower=0)
+
     # Suppression des colonnes provoquant des fuites de données ou redondantes
     to_drop = ['period', 'value_mensuelle', 'norm_coeff', 
                'pays_depart', 'aeroport_depart', 'pays_arrivee', 'aeroport_arrivee']
@@ -73,7 +81,7 @@ def generate_dataset():
     # Tri séquentiel par route (critique pour LSTM)
     df_main = df_main.sort_values(['route', 'date']).reset_index(drop=True)
 
-    # Export
+    # Export (Exigence native Keras pour le modèle final ultérieur)
     df_main.to_parquet(OUTPUT_FILE, index=False)
 
 if __name__ == "__main__":
