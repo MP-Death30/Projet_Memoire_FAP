@@ -5,7 +5,7 @@ import numpy as np
 # Configuration des chemins
 BASE_DIR = Path(__file__).resolve().parents[3]
 DATA_RAW = BASE_DIR / "data" / "raw"
-MAIN_FILE = BASE_DIR / "data" / "processed" / "transavia_orly_daily_2024.parquet"
+MAIN_FILE = BASE_DIR / "data" / "processed" / "transavia_orly_daily_2023_2024.parquet"
 VACANCES_FILE = DATA_RAW / "Evenement_pays" / "Vacances_scolaire_2024_2027.csv"
 EVENTS_FILE = DATA_RAW / "Evenement_pays" / "Evenement_sport_tech_business_2023_2027.csv"
 OUTPUT_FILE = BASE_DIR / "data" / "processed" / "dataset_lstm.parquet"

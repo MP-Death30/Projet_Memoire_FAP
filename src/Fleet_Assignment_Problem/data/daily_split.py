@@ -16,7 +16,7 @@ def expand_date_ranges(df, country_col):
     df_exp['flag'] = True
     return df_exp[['date', country_col, 'flag']].drop_duplicates()
 
-def split_monthly_to_daily_2024():
+def split_monthly_to_daily_2023_2024():
     # 1. Déclaration des chemins relatifs absolus et des variables d'environnement
     BASE_DIR = Path(__file__).resolve().parents[3]
     DATA_RAW = BASE_DIR / "data" / "raw"
@@ -24,7 +24,7 @@ def split_monthly_to_daily_2024():
     COEFF_FILE = DATA_RAW / "Coefficients_repartition" / "coefficient_repartition_jour.csv"
     VACANCES_FILE = DATA_RAW / "Evenement_pays" / "Vacances_scolaire_2024_2027.csv"
     EVENTS_FILE = DATA_RAW / "Evenement_pays" / "Evenement_sport_tech_business_2023_2027.csv"
-    OUTPUT_FILE = BASE_DIR / "data" / "processed" / "transavia_orly_daily_2024.parquet"
+    OUTPUT_FILE = BASE_DIR / "data" / "processed" / "transavia_orly_daily_2023_2024.parquet"
 
     # 2. Paramétrage des chocs de demande (Multiplicateurs d'impact calendaire)
     MULT_WEEKEND = 1.40
@@ -33,7 +33,7 @@ def split_monthly_to_daily_2024():
 
     # 3. Ingestion et nettoyage du référentiel de trafic (Contrainte hiérarchique Macro)
     df_traffic = pd.read_parquet(TRAFFIC_FILE)
-    df_traffic = df_traffic[df_traffic['period'].str.startswith('2024')].copy()
+    df_traffic = df_traffic[df_traffic['period'].str[:4].astype(int).between(2023, 2024)].copy()  #df = df[df['period'].str[:4].astype(int).between(2023, 2024)]
     if 'date' in df_traffic.columns:
         df_traffic = df_traffic.drop(columns=['date'])
     df_traffic = df_traffic.rename(columns={'value': 'value_mensuelle'})
@@ -67,7 +67,7 @@ def split_monthly_to_daily_2024():
     df_evt_daily = expand_date_ranges(df_evt, 'pays').rename(columns={'flag': 'is_event'})
 
     # 5. Instanciation du calendrier isotrope annuel et extraction des caractéristiques
-    dates = pd.date_range(start='2024-01-01', end='2024-12-31', freq='D')
+    dates = pd.date_range(start='2023-01-01', end='2024-12-31', freq='D')
     cal = pd.DataFrame({'date': dates})
     cal['period'] = cal['date'].dt.strftime('%Y-%m') 
     cal['jour_du_mois'] = cal['date'].dt.day
@@ -143,4 +143,4 @@ def split_monthly_to_daily_2024():
     df_daily.to_parquet(OUTPUT_FILE, index=False)
 
 if __name__ == "__main__":
-    split_monthly_to_daily_2024()
+    split_monthly_to_daily_2023_2024()
