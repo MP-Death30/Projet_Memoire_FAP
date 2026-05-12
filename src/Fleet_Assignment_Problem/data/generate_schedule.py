@@ -5,111 +5,80 @@ from datetime import datetime, timedelta
 import random
 from pathlib import Path
 
-# --- PARAMÈTRES D'EXÉCUTION MODIFIABLES ---
+# Paramètres de simulation
 HUB = "LFPO"
-DESTINATIONS = [
-    "LFMN", "LFBO", "LPPR", "LPPT", "LIRF", "LEMD", "LEBL", "LEZL", "LGIR",
-    "EDDB", "LFTH", "LPFR", "LGAV", "LFBZ", "LEMG", "LFMP", "LEPA", "LFMT",
-    "LICJ", "LFML", "ESSA", "LTFM", "LIPZ", "LEMH", "LIBD", "LIRN", "LGSR",
-    "LGMK", "EKCH", "LOWW", "LGKR", "LEAL", "EIDW", "LICC", "LATI", "LPMA",
-    "LGRP", "LIMC", "LEVC", "LIBR", "GCTS", "LGSA", "LGTS", "LMML", "LIEO",
-    "LIRP", "LIEE", "GCRR", "GCLP", "LTAI", "LTBJ", "EGPH"
+DESTINATIONS = ["LFMN", "LEMD", "LPPT", "LIRF", "EDDB", "GCTS", "LGAV", "EIDW", "EKCH", "LOWW"]
+SPEED_KMH = 850
+TURNAROUND_TIME_MINS = 50
+DAYS_TO_SIMULATE = 7
+BASE_DATE = datetime(2024, 1, 1)
+
+# Vagues de départs (Hub Banks)
+BANKS = [
+    {"start": 6, "end": 8, "flights": 8},   # Vague matinale
+    {"start": 12, "end": 14, "flights": 6}, # Vague méridienne
+    {"start": 18, "end": 20, "flights": 8}  # Vague du soir
 ]
-
-SPEED_KMH = 963
-MIN_FLIGHT_TIME_MINS = 55
-TURNAROUND_TIME_MINS = 45
-START_HOUR = 6
-END_HOUR = 23
-AIRCRAFT_COUNT = 5
-
-# Modélisation tarifaire : Fixe + (Distance * Coût kilométrique)
-FARE_BASE = 50.0
-FARE_PER_KM = 0.05
-
-BASE_DIR = Path(__file__).resolve().parents[3]
-OUTPUT_FILE = BASE_DIR / "data" / "raw" / "Flight_Schedule" / "schedule_fap.csv"
-
-# ------------------------------------------
 
 def haversine(lon1, lat1, lon2, lat2):
     lon1, lat1, lon2, lat2 = map(np.radians, [lon1, lat1, lon2, lat2])
     dlon = lon2 - lon1
     dlat = lat2 - lat1
     a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
-    c = 2 * np.arcsin(np.sqrt(a))
-    return c * 6371 
+    return 2 * np.arcsin(np.sqrt(a)) * 6371
 
-def calculate_metrics(dist_km):
-    time_mins = max(MIN_FLIGHT_TIME_MINS, (dist_km / SPEED_KMH) * 60)
-    fare = round((FARE_BASE + (dist_km * FARE_PER_KM)) / 10) * 10
-    return time_mins, int(fare)
+airports = airportsdata.load('ICAO')
+hub_lat, hub_lon = airports[HUB]['lat'], airports[HUB]['lon']
 
-def generate_schedule():
-    airports = airportsdata.load('ICAO')
-    hub_data = airports[HUB]
+schedule = []
+flight_id = 1000
+
+for day in range(DAYS_TO_SIMULATE):
+    current_date = BASE_DATE + timedelta(days=day)
     
-    # Pré-calcul des vecteurs distance/temps/tarif
-    metrics = {}
-    for dest in DESTINATIONS:
-        if dest in airports:
-            dist = haversine(hub_data['lon'], hub_data['lat'], airports[dest]['lon'], airports[dest]['lat'])
-            time_mins, fare = calculate_metrics(dist)
-            metrics[dest] = (time_mins, fare, dist) # Ajout de la distance en mémoire
-
-    valid_destinations = list(metrics.keys())
-    base_day = datetime(2024, 1, 1)
-    schedule = []
-    flight_number = 101
-
-    for ac_id in range(1, AIRCRAFT_COUNT + 1):
-        current_time = base_day.replace(hour=START_HOUR, minute=0)
-        end_of_ops = base_day.replace(hour=END_HOUR, minute=0)
+    for bank in BANKS:
+        # Sélection aléatoire de destinations pour cette vague
+        wave_dests = random.sample(DESTINATIONS, min(bank["flights"], len(DESTINATIONS)))
         
-        while True:
-            dest = random.choice(valid_destinations)
-            duration_mins, fare, dist = metrics[dest]
+        for dest in wave_dests:
+            dest_lat, dest_lon = airports[dest]['lat'], airports[dest]['lon']
+            dist = haversine(hub_lon, hub_lat, dest_lon, dest_lat)
+            flight_duration = timedelta(minutes=int((dist / SPEED_KMH) * 60))
             
-            # Validation de la viabilité
-            total_cycle_time = (duration_mins * 2) + TURNAROUND_TIME_MINS
-            if current_time + timedelta(minutes=total_cycle_time) > end_of_ops:
-                break
-                
+            # Départ aléatoire dans la fenêtre de la vague
+            dep_hour = random.randint(bank["start"], bank["end"] - 1)
+            dep_minute = random.choice([0, 10, 15, 20, 30, 40, 45, 50])
+            dep_time_out = current_date.replace(hour=dep_hour, minute=dep_minute)
+            arr_time_out = dep_time_out + flight_duration
+            
             # Segment Aller
-            dep_time_out = current_time
-            arr_time_out = dep_time_out + timedelta(minutes=duration_mins)
-            
             schedule.append({
-                "Flight#": f"TO{flight_number}",
+                "Flight#": f"TO{flight_id}",
                 "From": HUB,
                 "To": dest,
-                "Dept Time": dep_time_out.strftime("%H%M"),
-                "Arr Time": arr_time_out.strftime("%H%M"),
-                "Tarif": fare,
+                "Dept Time": dep_time_out,
+                "Arr Time": arr_time_out,
                 "Distance [km]": round(dist)
             })
-            flight_number += 1
-            current_time = arr_time_out + timedelta(minutes=TURNAROUND_TIME_MINS)
+            flight_id += 1
             
-            # Segment Retour
-            dep_time_in = current_time
-            arr_time_in = dep_time_in + timedelta(minutes=duration_mins)
+            # Segment Retour (imposé par le Turnaround)
+            dep_time_in = arr_time_out + timedelta(minutes=TURNAROUND_TIME_MINS)
+            arr_time_in = dep_time_in + flight_duration
             
             schedule.append({
-                "Flight#": f"TO{flight_number}",
+                "Flight#": f"TO{flight_id}",
                 "From": dest,
                 "To": HUB,
-                "Dept Time": dep_time_in.strftime("%H%M"),
-                "Arr Time": arr_time_in.strftime("%H%M"),
-                "Tarif": fare,
+                "Dept Time": dep_time_in,
+                "Arr Time": arr_time_in,
                 "Distance [km]": round(dist)
             })
-            flight_number += 1
-            current_time = arr_time_in + timedelta(minutes=TURNAROUND_TIME_MINS)
+            flight_id += 1
 
-    df = pd.DataFrame(schedule)
-    df.to_csv(OUTPUT_FILE, index=False, sep=",")
-    print(f"Opération terminée. Matrice générée ({len(df)} vols) : {OUTPUT_FILE}")
+df_schedule = pd.DataFrame(schedule)
+df_schedule = df_schedule.sort_values(by="Dept Time").reset_index(drop=True)
 
-if __name__ == "__main__":
-    generate_schedule()
+BASE_DIR = Path(__file__).resolve().parents[3]
+OUTPUT_FILE = BASE_DIR / "data" / "raw" / "Flight_Schedule" / "schedule_fap.csv"
+df_schedule.to_csv(OUTPUT_FILE, index=False)
