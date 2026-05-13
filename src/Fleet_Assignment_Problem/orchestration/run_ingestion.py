@@ -1,3 +1,5 @@
+# Ingère, décompresse et nettoie les données brutes Eurostat. Consolide les déclarations miroirs pour générer le référentiel de trafic historique global.
+
 import pandas as pd
 from pathlib import Path
 import logging

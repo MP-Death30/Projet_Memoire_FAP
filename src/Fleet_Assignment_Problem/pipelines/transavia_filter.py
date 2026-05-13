@@ -1,3 +1,5 @@
+# Isole le périmètre opérationnel. Restreint le jeu de données aux liaisons bidirectionnelles strictes opérées vers et depuis le hub d'Orly (LFPO).
+
 import pandas as pd
 from pathlib import Path
 

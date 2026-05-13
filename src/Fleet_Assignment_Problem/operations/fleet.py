@@ -1,3 +1,5 @@
+# Standardise la base de données matérielle. Type et isole les capacités, vitesses de croisière et rayons d'action nominaux des aéronefs.
+
 import pandas as pd
 from pathlib import Path
 import logging

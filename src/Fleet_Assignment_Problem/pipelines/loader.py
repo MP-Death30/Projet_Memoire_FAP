@@ -1,3 +1,4 @@
+# Fournit la fonction d'extraction de base. Transforme le format matriciel Eurostat en format colonnaire relationnel.
 # Traitement des dossiers gzip + nettoyage des fichiers
 
 import pandas as pd

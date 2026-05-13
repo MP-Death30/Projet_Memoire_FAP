@@ -1,3 +1,5 @@
+# Résout le produit cartésien entre la flotte et le réseau. Élimine les affectations physiquement impossibles via la contrainte du rayon d'action.
+
 import pandas as pd
 from pathlib import Path
 import logging

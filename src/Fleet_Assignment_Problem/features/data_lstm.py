@@ -1,3 +1,5 @@
+# Structure le jeu de données pour l'apprentissage. Aligne les séquences temporelles, intègre les covariables et injecte un bruit stochastique pré-entraînement.
+
 from pathlib import Path
 import pandas as pd
 import numpy as np

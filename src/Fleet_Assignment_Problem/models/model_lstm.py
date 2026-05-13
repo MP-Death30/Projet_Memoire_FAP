@@ -1,3 +1,5 @@
+# Instancie et optimise l'architecture neuronale. Entraîne le modèle récurrent sur l'historique et le contexte futur pour la prédiction de demande au format Keras.
+
 import numpy as np
 import pandas as pd
 from pathlib import Path

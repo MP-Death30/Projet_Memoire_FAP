@@ -1,3 +1,5 @@
+# Spatialise le réseau. Calcule la distance orthodromique (Haversine) entre chaque paire d'aéroports ICAO.
+
 import pandas as pd
 import numpy as np
 import airportsdata

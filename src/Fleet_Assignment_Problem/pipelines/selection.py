@@ -1,3 +1,5 @@
+# Évalue la viabilité statistique de chaque route. Filtre le réseau pour conserver uniquement les lignes possédant une profondeur temporelle (>5 ans) et un volume significatif.
+
 import pandas as pd
 from pathlib import Path
 import logging
