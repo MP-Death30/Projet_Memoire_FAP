@@ -1,6 +1,6 @@
 import pytest
 import pandas as pd
-from src.Fleet_Assignment_Problem.data.loader import load_and_melt_data
+from src.Fleet_Assignment_Problem.pipelines.loader import load_and_melt_data
 
 def test_load_and_melt_pipeline(tmp_path):
     # 1. Création fausse donnée (Wide)

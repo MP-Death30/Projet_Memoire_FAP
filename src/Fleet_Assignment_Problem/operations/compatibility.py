@@ -11,7 +11,7 @@ def build_compatibility_matrix():
     OUTPUT_FILE = BASE_DIR / "data" / "processed" / "compatibility.parquet"
 
     if not DIST_FILE.exists() or not FLEET_FILE.exists():
-        logging.error("Fichiers manquants. Lancez d'abord data.network et data.fleet")
+        logging.error("Fichiers manquants. Lancez d'abord operations.network et operations.fleet")
         return
 
     logging.info("Chargement des données...")

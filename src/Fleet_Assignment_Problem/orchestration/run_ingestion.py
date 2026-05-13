@@ -2,7 +2,7 @@ import pandas as pd
 from pathlib import Path
 import logging
 import time
-from src.Fleet_Assignment_Problem.data.loader import load_and_melt_data
+from src.Fleet_Assignment_Problem.pipelines.loader import load_and_melt_data
 
 # Configuration du logging (Traceability)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def run_etl_pipeline():
     # 1. Définition des chemins (Absolu ou Relatif robuste)
     # Remonte de 3 niveaux : main.py -> Fleet_Assignment_Problem -> src -> RACINE DU PROJET
-    BASE_DIR = Path(__file__).resolve().parents[2] 
+    BASE_DIR = Path(__file__).resolve().parents[3] 
     RAW_DIR = BASE_DIR / "data" / "raw" / "UE_air_passenger_between_airport"
     PROCESSED_DIR = BASE_DIR / "data" / "processed"
     
