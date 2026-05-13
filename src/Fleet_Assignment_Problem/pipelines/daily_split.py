@@ -42,16 +42,14 @@ def split_monthly_to_daily_2023_2024():
     
     # Dictionnaire de standardisation (à mapper sur le format de pays_depart/arrivee de df_traffic)
     COUNTRY_MAPPING = {
-        'DE': 'Allemagne',
-        'DK': 'Danemark',
+        'DE': 'Allemagne'
         'EL': 'Grèce',
         'ES': 'Espagne',
         'FR': 'France',
         'IE': 'Irlande',
         'IT': 'Italie',
         'MT': 'Malte',
-        'PT': 'Portugal',
-        'SE': 'Suède',
+        'PT': 'Portugal'
     }
 
     df_vac = pd.read_csv(VACANCES_FILE, sep=';', encoding='utf-8')

@@ -13,8 +13,8 @@ def filter_transavia_orly_network():
     transavia_destinations = {
         "LFMN", "LFBO", "LPPR", "LPPT", "LIRF", "LEMD", "LEBL", "LEZL", "LGIR",
         "EDDB", "LFTH", "LPFR", "LGAV", "LFBZ", "LEMG", "LFMP", "LEPA", "LFMT",
-        "LICJ", "LFML", "ESSA", "LTFM", "LIPZ", "LEMH", "LIBD", "LIRN", "LGSR",
-        "LGMK", "EKCH", "LOWW", "LGKR", "LEAL", "EIDW", "LICC", "LATI", "LPMA",
+        "LICJ", "LFML", "LTFM", "LIPZ", "LEMH", "LIBD", "LIRN", "LGSR",
+        "LGMK", "LOWW", "LGKR", "LEAL", "EIDW", "LICC", "LATI", "LPMA",
         "LGRP", "LIMC", "LEVC", "LIBR", "GCTS", "LGSA", "LGTS", "LMML", "LIEO",
         "LIRP", "LIEE", "GCRR", "GCLP", "LTAI", "LTBJ", "EGPH"
     }
@@ -23,7 +23,6 @@ def filter_transavia_orly_network():
 
     df = pd.read_parquet(INPUT_FILE)
 
-    #df = df[df['period'].str[:4].astype(int) >= 2017]
     # Restriction temporelle : 2023 à 2024
     df = df[df['period'].str[:4].astype(int).between(2023, 2024)]
 

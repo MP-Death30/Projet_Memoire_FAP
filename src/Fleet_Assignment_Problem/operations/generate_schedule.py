@@ -7,7 +7,7 @@ from pathlib import Path
 
 # Paramètres de simulation
 HUB = "LFPO"
-DESTINATIONS = ["LFMN", "LEMD", "LPPT", "LIRF", "EDDB", "GCTS", "LGAV", "EIDW", "EKCH", "LOWW"]
+DESTINATIONS = ["LFMN", "LEMD", "LPPT", "LIRF", "EDDB", "GCTS", "LGAV", "EIDW", "GCLP", "LOWW"]
 SPEED_KMH = 850
 TURNAROUND_TIME_MINS = 50
 DAYS_TO_SIMULATE = 7
