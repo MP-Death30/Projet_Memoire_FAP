@@ -12,6 +12,7 @@ import joblib
 BASE_DIR = Path(__file__).resolve().parents[3]
 INPUT_FILE = BASE_DIR / "data" / "processed" / "dataset_lstm.parquet"
 SEQ_LEN = 21
+HORIZON = 7
 
 def prepare_data():
     df = pd.read_parquet(INPUT_FILE)
@@ -41,10 +42,15 @@ def prepare_data():
         vals_target = group[col_target].values
         vals_exo = group[cols_exo].values
         
-        for i in range(len(group) - SEQ_LEN):
+        for i in range(len(group) - SEQ_LEN - HORIZON + 1):
+            # Séquence historique inchangée
             seq = vals_target[i : i + SEQ_LEN].reshape(-1, 1)
-            exo = vals_exo[i + SEQ_LEN]
-            target = vals_target[i + SEQ_LEN]
+            
+            # Contexte futur aplati pour les 7 jours à prédire (ex: 7 jours * 8 features = 56 dimensions)
+            exo = vals_exo[i + SEQ_LEN : i + SEQ_LEN + HORIZON].flatten() 
+            
+            # Cible vectorielle
+            target = vals_target[i + SEQ_LEN : i + SEQ_LEN + HORIZON] 
             
             X_seq_list.append(seq)
             X_exo_list.append(exo)
@@ -56,18 +62,21 @@ def prepare_data():
     
     return X_seq, X_exo, y, scaler_target, len(cols_exo)
 
-def build_model(seq_len, exo_dim):
+def build_model(seq_len, exo_dim, horizon):
     input_seq = Input(shape=(seq_len, 1), name="past_sequence")
     lstm_out = LSTM(64, return_sequences=False)(input_seq)
     lstm_out = Dropout(0.4)(lstm_out)
     
-    input_exo = Input(shape=(exo_dim,), name="future_context")
-    exo_out = Dense(16, activation='relu')(input_exo)
+    # Prise en charge de la matrice temporelle future aplatie
+    input_exo = Input(shape=(exo_dim * horizon,), name="future_context")
+    exo_out = Dense(32, activation='relu')(input_exo)
     
     merged = Concatenate()([lstm_out, exo_out])
-    dense_1 = Dense(32, activation='relu')(merged)
+    dense_1 = Dense(64, activation='relu')(merged)
     dense_1 = Dropout(0.3)(dense_1)
-    output = Dense(1, activation='linear')(dense_1)
+    
+    # Vecteur de sortie direct
+    output = Dense(horizon, activation='linear', name="multi_step_output")(dense_1)
     
     model = Model(inputs=[input_seq, input_exo], outputs=output)
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss='mse')
@@ -82,7 +91,7 @@ def train():
     X_exo_train, X_exo_val = X_exo[:split_idx], X_exo[split_idx:]
     y_train, y_val = y[:split_idx], y[split_idx:]
     
-    model = build_model(SEQ_LEN, exo_dim)
+    model = build_model(SEQ_LEN, exo_dim, HORIZON)
     
     early_stop = EarlyStopping(
         monitor='val_loss', 
