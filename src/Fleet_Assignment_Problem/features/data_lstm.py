@@ -60,10 +60,7 @@ def generate_dataset():
     df_main['vacances_depart'] = df_main['vacances_depart'].fillna(0.0)
     df_main['vacances_arrivee'] = df_main['vacances_arrivee'].fillna(0.0)
 
-    # Injection du bruit stochastique
-    noise = np.random.normal(loc=1.0, scale=0.08, size=len(df_main))
-    df_main['value_jour'] = (df_main['value_jour'] * noise).round().astype(int)
-    df_main['value_jour'] = df_main['value_jour'].clip(lower=0)
+    df_main['value_jour'] = df_main['value_jour'].clip(lower=0).astype(int)
 
     to_drop = ['period', 'value_mensuelle', 'norm_coeff', 
                'pays_depart', 'aeroport_depart', 'pays_arrivee', 'aeroport_arrivee']
