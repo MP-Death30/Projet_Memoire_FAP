@@ -46,7 +46,7 @@ class FAPEnv(gym.Env):
             
         return self._get_obs(), {}
 
-    def valid_action_mask(self):
+    def action_masks(self):
         """
         Détermine la matrice de légalité des actions.
         Bloque toute affectation d'un appareil hors position ou indisponible temporellement.
@@ -113,7 +113,7 @@ class FAPEnv(gym.Env):
         self.current_step += 1
         terminated = self.current_step >= len(self.schedule)
         
-        return self._get_obs(), reward, terminated, False, {}
+        return self._get_obs(), reward / 100000.0, terminated, False, {}
 
     def _get_obs(self):
         """

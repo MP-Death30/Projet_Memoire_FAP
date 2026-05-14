@@ -13,6 +13,9 @@ TURNAROUND_TIME_MINS = 50
 DAYS_TO_SIMULATE = 7
 BASE_DATE = datetime(2025, 1, 1)
 
+# Contrainte de ressource matérielle
+FLEET_SIZE = 20
+
 # Paramètres tarifaires
 FARE_BASE = 50.0
 FARE_PER_KM = 0.05
@@ -37,28 +40,45 @@ hub_lat, hub_lon = airports[HUB]['lat'], airports[HUB]['lon']
 schedule = []
 flight_id = 1000
 
+# Initialisation du vecteur de disponibilité de la flotte au Hub
+fleet_availability = {f"AC_{i:02d}": BASE_DATE for i in range(1, FLEET_SIZE + 1)}
+
 for day in range(DAYS_TO_SIMULATE):
     current_date = BASE_DATE + timedelta(days=day)
     
     for bank in BANKS:
         wave_dests = random.sample(DESTINATIONS, min(bank["flights"], len(DESTINATIONS)))
         
+        # Ordonnancement stochastique des requêtes de vol pour la vague
+        desired_flights = []
         for dest in wave_dests:
+            dep_hour = random.randint(bank["start"], bank["end"] - 1)
+            dep_minute = random.choice([0, 10, 15, 20, 30, 40, 45, 50])
+            dep_time = current_date.replace(hour=dep_hour, minute=dep_minute)
+            desired_flights.append((dep_time, dest))
+            
+        desired_flights.sort(key=lambda x: x[0])
+        
+        for dep_time_out, dest in desired_flights:
             dest_lat, dest_lon = airports[dest]['lat'], airports[dest]['lon']
             dist = haversine(hub_lon, hub_lat, dest_lon, dest_lat)
             flight_duration = timedelta(minutes=int((dist / SPEED_KMH) * 60))
-            
-            # Calcolo della tariffa
             fare = round((FARE_BASE + (dist * FARE_PER_KM)) / 10) * 10
             
-            dep_hour = random.randint(bank["start"], bank["end"] - 1)
-            dep_minute = random.choice([0, 10, 15, 20, 30, 40, 45, 50])
-            dep_time_out = current_date.replace(hour=dep_hour, minute=dep_minute)
+            # Allocation du premier appareil disponible (FIFO)
+            assigned_ac = min(fleet_availability, key=fleet_availability.get)
+            ac_ready_time = fleet_availability[assigned_ac]
+            
+            # Résolution de conflit : si l'appareil n'est pas prêt, le vol est retardé
+            if ac_ready_time > dep_time_out:
+                dep_time_out = ac_ready_time
+                
             arr_time_out = dep_time_out + flight_duration
             
             # Segment Aller
             schedule.append({
                 "Flight#": f"TO{flight_id}",
+                "Tail_Number": assigned_ac,
                 "From": HUB,
                 "To": dest,
                 "Dept Time": dep_time_out,
@@ -74,6 +94,7 @@ for day in range(DAYS_TO_SIMULATE):
             
             schedule.append({
                 "Flight#": f"TO{flight_id}",
+                "Tail_Number": assigned_ac,
                 "From": dest,
                 "To": HUB,
                 "Dept Time": dep_time_in,
@@ -82,12 +103,14 @@ for day in range(DAYS_TO_SIMULATE):
                 "Tarif": fare
             })
             flight_id += 1
+            
+            # Mise à jour de l'état du système : disponibilité post-rotation
+            fleet_availability[assigned_ac] = arr_time_in + timedelta(minutes=TURNAROUND_TIME_MINS)
 
 df_schedule = pd.DataFrame(schedule)
 df_schedule = df_schedule.sort_values(by="Dept Time").reset_index(drop=True)
 
 BASE_DIR = Path(__file__).resolve().parents[3]
-# Creazione delle directory se mancanti
 output_dir = BASE_DIR / "data" / "raw" / "Flight_Schedule"
 output_dir.mkdir(parents=True, exist_ok=True)
 
