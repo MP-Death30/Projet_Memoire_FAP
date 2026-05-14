@@ -49,15 +49,25 @@ class FAPEnv(gym.Env):
         flight = self.schedule.iloc[self.current_step]
         reward = 0.0
         
+        # INITIALISATION DES MÉTRIQUES (Correction de l'UnboundLocalError)
+        revenue = 0
+        spill_cost = 0
+        delay_minutes = 0
+        
         if action == self.num_aircraft:
-            reward = - (flight['Predicted_Demand'] * flight['Tarif'] * self.base_spill_cost)
+            # Cas : Aucun avion assigné (Spill total)
+            spill_cost = flight['Predicted_Demand'] * flight['Tarif'] * self.base_spill_cost
+            reward = - spill_cost
         else:
             ac = self.fleet_state[action]
             
             if np.random.rand() < self.prob_weather:
-                reward = - (flight['Predicted_Demand'] * flight['Tarif'] * self.base_spill_cost * 1.5)
+                # Cas : Aléas météo
+                spill_cost = flight['Predicted_Demand'] * flight['Tarif'] * self.base_spill_cost * 1.5
+                reward = - spill_cost
                 ac['available_time'] = max(ac['available_time'], flight['Dept_Time_Minutes']) + 120 
             else:
+                # Cas : Vol opéré normalement
                 pax = min(ac['capacity'], flight['Predicted_Demand'])
                 revenue = pax * flight['Tarif']
                 spill_cost = (flight['Predicted_Demand'] - pax) * flight['Tarif'] * self.base_spill_cost
@@ -71,14 +81,18 @@ class FAPEnv(gym.Env):
                 ac['position'] = flight['Dest_Idx']
                 flight_duration = flight['Arr_Time_Minutes'] - flight['Dept_Time_Minutes']
                 
-                # Le temps de disponibilité se calque sur le départ réel du vol, pas l'historique
                 base_time = max(ac['available_time'], flight['Dept_Time_Minutes'])
                 ac['available_time'] = base_time + flight_duration + ac['turnaround_time'] + delay_minutes + repair_time
 
         self.current_step += 1
         terminated = self.current_step >= len(self.schedule)
         
-        return self._get_obs(), reward / 100000.0, terminated, False, {}
+        # Transmission de la télémétrie via le dictionnaire info
+        return self._get_obs(), reward / 100000.0, terminated, False, {
+            'revenue': revenue,
+            'spill_cost': spill_cost,
+            'delay_minutes': delay_minutes
+        }
 
     def _get_obs(self):
         if self.current_step >= len(self.schedule):
