@@ -25,13 +25,15 @@ REVERSE_MAPPING = {v: k for k, v in COUNTRY_MAPPING.items()}
 TIME_OF_DAY_WEIGHTS = {
     'morning': 0.45,
     'midday': 0.20,
-    'evening': 0.35
+    'evening': 0.30,
+    'night': 0.05
 }
 
 def get_time_bank(hour):
     if 6 <= hour < 11: return 'morning'
     elif 11 <= hour < 16: return 'midday'
-    else: return 'evening'
+    elif 16 <= hour <= 23: return 'evening'
+    else: return 'night'
 
 def build_future_context(target_dates, pays_dep_code, pays_arr_code):
     df_future = pd.DataFrame({'date': pd.to_datetime(target_dates)})

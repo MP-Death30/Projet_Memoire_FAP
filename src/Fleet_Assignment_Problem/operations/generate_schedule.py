@@ -5,114 +5,65 @@ from datetime import datetime, timedelta
 import random
 from pathlib import Path
 
-# Paramètres de simulation
-HUB = "LFPO"
-DESTINATIONS = ["LFMN", "LEMD", "LPPT", "LIRF", "EDDB", "GCTS", "LGAV", "EIDW", "GCLP", "LOWW"]
-SPEED_KMH = 850
-TURNAROUND_TIME_MINS = 50
+MAX_AIRCRAFT = 28 
 DAYS_TO_SIMULATE = 7
 BASE_DATE = datetime(2025, 1, 1)
 
-# Contrainte de ressource matérielle
-FLEET_SIZE = 20
+HUB = "LFPO"
+DESTINATIONS = ["LFMN", "LEMD", "LPPT", "LIRF", "EDDB", "GCTS", "LGAV", "EIDW", "GCLP", "LOWW"]
 
-# Paramètres tarifaires
+SPEED_KMH = 850
+TURNAROUND_TIME_MINS = 50
+OPERATING_HOURS = {"start": 6, "end": 22}
+
 FARE_BASE = 50.0
 FARE_PER_KM = 0.05
 
-# Vagues de départs (Hub Banks)
-BANKS = [
-    {"start": 6, "end": 8, "flights": 8},   # Vague matinale
-    {"start": 12, "end": 14, "flights": 6}, # Vague méridienne
-    {"start": 18, "end": 20, "flights": 8}  # Vague du soir
-]
+airports = airportsdata.load('ICAO')
 
 def haversine(lon1, lat1, lon2, lat2):
     lon1, lat1, lon2, lat2 = map(np.radians, [lon1, lat1, lon2, lat2])
     dlon = lon2 - lon1
     dlat = lat2 - lat1
-    a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
-    return 2 * np.arcsin(np.sqrt(a)) * 6371
+    a = np.sin(dlat/2.0)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2.0)**2
+    return 6371 * (2 * np.arcsin(np.sqrt(a)))
 
-airports = airportsdata.load('ICAO')
-hub_lat, hub_lon = airports[HUB]['lat'], airports[HUB]['lon']
+distances = {dest: haversine(airports[HUB]['lon'], airports[HUB]['lat'], airports[dest]['lon'], airports[dest]['lat']) for dest in DESTINATIONS}
 
 schedule = []
 flight_id = 1000
 
-# Initialisation du vecteur de disponibilité de la flotte au Hub
-fleet_availability = {f"AC_{i:02d}": BASE_DATE for i in range(1, FLEET_SIZE + 1)}
+for ac_idx in range(MAX_AIRCRAFT):
+    current_time = BASE_DATE.replace(hour=OPERATING_HOURS["start"], minute=random.choice([0, 15, 30, 45]))
+    current_time += timedelta(minutes=random.randint(0, 90))
+    end_date = BASE_DATE + timedelta(days=DAYS_TO_SIMULATE)
 
-for day in range(DAYS_TO_SIMULATE):
-    current_date = BASE_DATE + timedelta(days=day)
-    
-    for bank in BANKS:
-        wave_dests = random.sample(DESTINATIONS, min(bank["flights"], len(DESTINATIONS)))
-        
-        # Ordonnancement stochastique des requêtes de vol pour la vague
-        desired_flights = []
-        for dest in wave_dests:
-            dep_hour = random.randint(bank["start"], bank["end"] - 1)
-            dep_minute = random.choice([0, 10, 15, 20, 30, 40, 45, 50])
-            dep_time = current_date.replace(hour=dep_hour, minute=dep_minute)
-            desired_flights.append((dep_time, dest))
-            
-        desired_flights.sort(key=lambda x: x[0])
-        
-        for dep_time_out, dest in desired_flights:
-            dest_lat, dest_lon = airports[dest]['lat'], airports[dest]['lon']
-            dist = haversine(hub_lon, hub_lat, dest_lon, dest_lat)
-            flight_duration = timedelta(minutes=int((dist / SPEED_KMH) * 60))
-            fare = round((FARE_BASE + (dist * FARE_PER_KM)) / 10) * 10
-            
-            # Allocation du premier appareil disponible (FIFO)
-            assigned_ac = min(fleet_availability, key=fleet_availability.get)
-            ac_ready_time = fleet_availability[assigned_ac]
-            
-            # Résolution de conflit : si l'appareil n'est pas prêt, le vol est retardé
-            if ac_ready_time > dep_time_out:
-                dep_time_out = ac_ready_time
-                
-            arr_time_out = dep_time_out + flight_duration
-            
-            # Segment Aller
-            schedule.append({
-                "Flight#": f"TO{flight_id}",
-                "Tail_Number": assigned_ac,
-                "From": HUB,
-                "To": dest,
-                "Dept Time": dep_time_out,
-                "Arr Time": arr_time_out,
-                "Distance [km]": round(dist),
-                "Tarif": fare
-            })
-            flight_id += 1
-            
-            # Segment Retour
-            dep_time_in = arr_time_out + timedelta(minutes=TURNAROUND_TIME_MINS)
-            arr_time_in = dep_time_in + flight_duration
-            
-            schedule.append({
-                "Flight#": f"TO{flight_id}",
-                "Tail_Number": assigned_ac,
-                "From": dest,
-                "To": HUB,
-                "Dept Time": dep_time_in,
-                "Arr Time": arr_time_in,
-                "Distance [km]": round(dist),
-                "Tarif": fare
-            })
-            flight_id += 1
-            
-            # Mise à jour de l'état du système : disponibilité post-rotation
-            fleet_availability[assigned_ac] = arr_time_in + timedelta(minutes=TURNAROUND_TIME_MINS)
+    while current_time < end_date:
+        if current_time.hour >= OPERATING_HOURS["end"] or current_time.hour < OPERATING_HOURS["start"]:
+            current_time = (current_time + timedelta(days=1)).replace(hour=OPERATING_HOURS["start"], minute=random.choice([0, 15, 30]))
+            if current_time >= end_date: break
 
-df_schedule = pd.DataFrame(schedule)
-df_schedule = df_schedule.sort_values(by="Dept Time").reset_index(drop=True)
+        dest = random.choice(DESTINATIONS)
+        dist = distances[dest]
+        flight_duration = timedelta(minutes=int(np.ceil((dist / SPEED_KMH) * 60)))
+        fare = int(FARE_BASE + (dist * FARE_PER_KM))
 
-BASE_DIR = Path(__file__).resolve().parents[3]
-output_dir = BASE_DIR / "data" / "raw" / "Flight_Schedule"
-output_dir.mkdir(parents=True, exist_ok=True)
+        if (current_time + (flight_duration * 2) + timedelta(minutes=TURNAROUND_TIME_MINS)).day != current_time.day:
+            current_time = (current_time + timedelta(days=1)).replace(hour=OPERATING_HOURS["start"], minute=0)
+            continue
 
-OUTPUT_FILE = output_dir / "schedule_fap.csv"
+        arr_time_out = current_time + flight_duration
+        schedule.append({"Flight#": f"TO{flight_id}", "From": HUB, "To": dest, "Dept Time": current_time, "Arr Time": arr_time_out, "Distance [km]": round(dist), "Tarif": fare})
+        flight_id += 1
+
+        dep_time_in = arr_time_out + timedelta(minutes=TURNAROUND_TIME_MINS)
+        arr_time_in = dep_time_in + flight_duration
+        schedule.append({"Flight#": f"TO{flight_id}", "From": dest, "To": HUB, "Dept Time": dep_time_in, "Arr Time": arr_time_in, "Distance [km]": round(dist), "Tarif": fare})
+        flight_id += 1
+
+        current_time = arr_time_in + timedelta(minutes=TURNAROUND_TIME_MINS + random.choice([0, 30, 60]))
+
+df_schedule = pd.DataFrame(schedule).sort_values(by="Dept Time").reset_index(drop=True)
+OUTPUT_FILE = Path(__file__).resolve().parents[3] / "data" / "raw" / "Flight_Schedule" / "schedule_fap.csv"
+OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
 df_schedule.to_csv(OUTPUT_FILE, index=False)
