@@ -11,7 +11,11 @@ DESTINATIONS = ["LFMN", "LEMD", "LPPT", "LIRF", "EDDB", "GCTS", "LGAV", "EIDW", 
 SPEED_KMH = 850
 TURNAROUND_TIME_MINS = 50
 DAYS_TO_SIMULATE = 7
-BASE_DATE = datetime(2024, 1, 1)
+BASE_DATE = datetime(2025, 1, 1)
+
+# Paramètres tarifaires
+FARE_BASE = 50.0
+FARE_PER_KM = 0.05
 
 # Vagues de départs (Hub Banks)
 BANKS = [
@@ -37,7 +41,6 @@ for day in range(DAYS_TO_SIMULATE):
     current_date = BASE_DATE + timedelta(days=day)
     
     for bank in BANKS:
-        # Sélection aléatoire de destinations pour cette vague
         wave_dests = random.sample(DESTINATIONS, min(bank["flights"], len(DESTINATIONS)))
         
         for dest in wave_dests:
@@ -45,7 +48,9 @@ for day in range(DAYS_TO_SIMULATE):
             dist = haversine(hub_lon, hub_lat, dest_lon, dest_lat)
             flight_duration = timedelta(minutes=int((dist / SPEED_KMH) * 60))
             
-            # Départ aléatoire dans la fenêtre de la vague
+            # Calcolo della tariffa
+            fare = round((FARE_BASE + (dist * FARE_PER_KM)) / 10) * 10
+            
             dep_hour = random.randint(bank["start"], bank["end"] - 1)
             dep_minute = random.choice([0, 10, 15, 20, 30, 40, 45, 50])
             dep_time_out = current_date.replace(hour=dep_hour, minute=dep_minute)
@@ -58,11 +63,12 @@ for day in range(DAYS_TO_SIMULATE):
                 "To": dest,
                 "Dept Time": dep_time_out,
                 "Arr Time": arr_time_out,
-                "Distance [km]": round(dist)
+                "Distance [km]": round(dist),
+                "Tarif": fare
             })
             flight_id += 1
             
-            # Segment Retour (imposé par le Turnaround)
+            # Segment Retour
             dep_time_in = arr_time_out + timedelta(minutes=TURNAROUND_TIME_MINS)
             arr_time_in = dep_time_in + flight_duration
             
@@ -72,7 +78,8 @@ for day in range(DAYS_TO_SIMULATE):
                 "To": HUB,
                 "Dept Time": dep_time_in,
                 "Arr Time": arr_time_in,
-                "Distance [km]": round(dist)
+                "Distance [km]": round(dist),
+                "Tarif": fare
             })
             flight_id += 1
 
@@ -80,5 +87,9 @@ df_schedule = pd.DataFrame(schedule)
 df_schedule = df_schedule.sort_values(by="Dept Time").reset_index(drop=True)
 
 BASE_DIR = Path(__file__).resolve().parents[3]
-OUTPUT_FILE = BASE_DIR / "data" / "raw" / "Flight_Schedule" / "schedule_fap.csv"
+# Creazione delle directory se mancanti
+output_dir = BASE_DIR / "data" / "raw" / "Flight_Schedule"
+output_dir.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_FILE = output_dir / "schedule_fap.csv"
 df_schedule.to_csv(OUTPUT_FILE, index=False)
