@@ -11,7 +11,7 @@ class MAPPOTrainer:
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
         self.gamma = gamma
         self.clip_ratio = clip_ratio
-        self.device = torch.device("cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.policy.to(self.device)
         
     def compute_gae(self, rewards, values, next_value, dones, lam=0.95):
