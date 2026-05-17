@@ -78,7 +78,7 @@ class FAPParallelEnv:
         return torch.tensor(masks)
 
     def step(self, actions):
-        actions = actions.numpy()
+        actions = actions.cpu().numpy()
         rewards = np.zeros(self.num_agents, dtype=np.float32)
         
         active_indices = np.where(~self.flight_assigned)[0]

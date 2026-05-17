@@ -26,6 +26,13 @@ class MAPPOTrainer:
                 next_val = values[t + 1]
             delta = rewards[t] + self.gamma * next_val * next_non_terminal - values[t]
             advantages[t] = last_gae_lam = delta + self.gamma * lam * next_non_terminal * last_gae_lam
+        # Forcer l'alignement matériel des tenseurs sur le GPU
+        advantages = advantages.to(self.device)
+        if isinstance(values, list):
+            values = torch.stack(values).to(self.device)
+        else:
+            values = values.to(self.device)
+            
         returns = advantages + values
         return advantages, returns
 
@@ -126,7 +133,10 @@ def collect_trajectories(env, trainer, physical_fleet_data, schedule_df, steps=1
             
     with torch.no_grad():
         _, _, _, next_value, _ = trainer.policy.get_action_and_value(
-            obs_a.unsqueeze(0), obs_f.unsqueeze(0), masks.unsqueeze(0), pad_mask.unsqueeze(0)
+            obs_a.unsqueeze(0).to(trainer.device), 
+            obs_f.unsqueeze(0).to(trainer.device), 
+            masks.unsqueeze(0).to(trainer.device), 
+            pad_mask.unsqueeze(0).to(trainer.device)
         )
         next_value = next_value.squeeze(0).squeeze(-1)
         

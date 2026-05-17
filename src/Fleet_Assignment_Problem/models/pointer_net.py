@@ -6,17 +6,23 @@ class FlightEncoder(nn.Module):
     def __init__(self, flight_dim, embed_dim, n_heads=4, num_layers=2):
         super().__init__()
         self.input_proj = nn.Linear(flight_dim, embed_dim)
+        # norm_first=True est impératif en RL pour bloquer l'explosion des gradients
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim, 
             nhead=n_heads, 
             dim_feedforward=embed_dim * 4, 
-            batch_first=True
+            batch_first=True,
+            norm_first=True 
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
     def forward(self, flights, pad_mask=None):
         x = self.input_proj(flights)
-        return self.transformer(x, src_key_padding_mask=pad_mask)
+        if pad_mask is not None:
+            is_all_padded = pad_mask.all(dim=-1, keepdim=True)
+            safe_pad_mask = pad_mask.masked_fill(is_all_padded, False)
+            return self.transformer(x, src_key_padding_mask=safe_pad_mask)
+        return self.transformer(x)
 
 class PointerActor(nn.Module):
     def __init__(self, agent_dim, embed_dim):
@@ -31,8 +37,14 @@ class PointerActor(nn.Module):
         
         logits = torch.bmm(Q, K.transpose(1, 2)).squeeze(1) * self.scale
         
-        # Verrouillage physique différentiable
-        logits = logits.masked_fill(~action_mask.bool(), float('-inf'))
+        # Bridage strict des valeurs d'attention pour empêcher l'overflow exponentiel PPO
+        logits = torch.clamp(logits, min=-50.0, max=50.0)
+        
+        is_empty = (~action_mask.bool()).all(dim=-1, keepdim=True)
+        safe_mask = action_mask.masked_fill(is_empty, True)
+        
+        logits = logits.masked_fill(~safe_mask.bool(), -1e8)
+        
         return logits
 
 class CentralizedCritic(nn.Module):
@@ -44,8 +56,10 @@ class CentralizedCritic(nn.Module):
         
         self.value_head = nn.Sequential(
             nn.Linear(hidden_dim + flight_embed_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1)
         )
@@ -74,8 +88,7 @@ class MAPPOPolicy(nn.Module):
             logits.append(self.actor(agents_state[:, i], flight_emb, action_masks[:, i]))
         logits = torch.stack(logits, dim=1) 
         
-        probs = F.softmax(logits, dim=-1)
-        dist = torch.distributions.Categorical(probs=probs)
+        dist = torch.distributions.Categorical(logits=logits)
         actions = dist.sample()
         log_probs = dist.log_prob(actions)
         
@@ -91,8 +104,7 @@ class MAPPOPolicy(nn.Module):
             logits.append(self.actor(agents_state[:, i], flight_emb, action_masks[:, i]))
         logits = torch.stack(logits, dim=1)
         
-        probs = F.softmax(logits, dim=-1)
-        dist = torch.distributions.Categorical(probs=probs)
+        dist = torch.distributions.Categorical(logits=logits)
         log_probs = dist.log_prob(actions)
         entropy = dist.entropy()
         

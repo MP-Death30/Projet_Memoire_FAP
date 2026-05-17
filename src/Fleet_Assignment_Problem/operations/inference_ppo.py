@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-import tensorflow as tf
 import joblib
 
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -157,3 +156,27 @@ def predict_demand_for_schedule(df_sched, model, scaler, df_history, start_date_
     else:
         df_sched['flight_demand'] = 150
         return df_sche
+
+def predict_demand_from_precomputed(df_sched, df_precomputed):
+    df_sched['Dept Time'] = pd.to_datetime(df_sched['Dept Time'])
+    df_sched['Arr Time'] = pd.to_datetime(df_sched['Arr Time'])
+    
+    ppo_states_global = []
+    routes_actives = df_precomputed['route'].unique()
+    route_map = { (r.split('_')[1], r.split('_')[3]): r for r in routes_actives if len(r.split('_')) >= 4 }
+
+    for (code_dep, code_arr), group in df_sched.groupby(['From', 'To']):
+        route = route_map.get((code_dep, code_arr)) or route_map.get((code_arr, code_dep))
+        if route:
+            df_demande = df_precomputed[df_precomputed['route'] == route].copy()
+            if not df_demande.empty:
+                df_ppo_state = map_demand_to_schedule(df_demande, group.copy(), code_dep, code_arr)
+                if not df_ppo_state.empty:
+                    ppo_states_global.append(df_ppo_state)
+    
+    if ppo_states_global:
+        final_df = pd.concat(ppo_states_global, ignore_index=True)
+        return final_df.sort_values('Dept Time').reset_index(drop=True)
+    else:
+        df_sched['flight_demand'] = 150
+        return df_sched
