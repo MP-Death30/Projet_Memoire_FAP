@@ -39,6 +39,10 @@ class FAPEnv(gym.Env):
         mask = np.zeros(self.num_aircraft + 1, dtype=np.int8)
         mask[-1] = 1 
         
+        # Sécurité : Fin de simulation
+        if self.current_step >= len(self.schedule):
+            return mask
+            
         flight = self.schedule.iloc[self.current_step]
         for i, ac in enumerate(self.fleet_state):
             if ac['position'] == flight['Origin_Idx'] and ac['available_time'] <= flight['Dept_Time_Minutes']:
@@ -61,28 +65,36 @@ class FAPEnv(gym.Env):
         else:
             ac = self.fleet_state[action]
             
-            if np.random.rand() < self.prob_weather:
-                # Cas : Aléas météo
-                spill_cost = flight['Predicted_Demand'] * flight['Tarif'] * self.base_spill_cost * 1.5
-                reward = - spill_cost
-                ac['available_time'] = max(ac['available_time'], flight['Dept_Time_Minutes']) + 120 
+            # VERROU PHYSIQUE : Rejet strict des actions hors-masque (téléportation/voyage temporel)
+            if ac['position'] != flight['Origin_Idx'] or ac['available_time'] > flight['Dept_Time_Minutes']:
+                spill_cost = flight['Predicted_Demand'] * flight['Tarif'] * self.base_spill_cost
+                reward = - (spill_cost * 2.0) # Sur-pénalité pour violation physique
+                # L'état de l'avion reste inchangé, la demande est perdue
+
             else:
-                # Cas : Vol opéré normalement
-                pax = min(ac['capacity'], flight['Predicted_Demand'])
-                revenue = pax * flight['Tarif']
-                spill_cost = (flight['Predicted_Demand'] - pax) * flight['Tarif'] * self.base_spill_cost
-                
-                delay_minutes = np.random.lognormal(mean=2.0, sigma=0.8) if np.random.rand() < 0.3 else 0
-                repair_time = np.random.exponential(scale=240) if np.random.rand() < self.prob_aog else 0
-                
-                delay_penalty = 0.5 * (delay_minutes ** 2) 
-                reward = revenue - ac['cost_per_flight'] - spill_cost - delay_penalty
-                
-                ac['position'] = flight['Dest_Idx']
-                flight_duration = flight['Arr_Time_Minutes'] - flight['Dept_Time_Minutes']
-                
-                base_time = max(ac['available_time'], flight['Dept_Time_Minutes'])
-                ac['available_time'] = base_time + flight_duration + ac['turnaround_time'] + delay_minutes + repair_time
+
+                if np.random.rand() < self.prob_weather:
+                    # Cas : Aléas météo
+                    spill_cost = flight['Predicted_Demand'] * flight['Tarif'] * self.base_spill_cost * 1.5
+                    reward = - spill_cost
+                    ac['available_time'] = max(ac['available_time'], flight['Dept_Time_Minutes']) + 120 
+                else:
+                    # Cas : Vol opéré normalement
+                    pax = min(ac['capacity'], flight['Predicted_Demand'])
+                    revenue = pax * flight['Tarif']
+                    spill_cost = (flight['Predicted_Demand'] - pax) * flight['Tarif'] * self.base_spill_cost
+                    
+                    delay_minutes = np.random.lognormal(mean=2.0, sigma=0.8) if np.random.rand() < 0.3 else 0
+                    repair_time = np.random.exponential(scale=240) if np.random.rand() < self.prob_aog else 0
+                    
+                    delay_penalty = 0.5 * (delay_minutes ** 2) 
+                    reward = revenue - ac['cost_per_flight'] - spill_cost - delay_penalty
+                    
+                    ac['position'] = flight['Dest_Idx']
+                    flight_duration = flight['Arr_Time_Minutes'] - flight['Dept_Time_Minutes']
+                    
+                    base_time = max(ac['available_time'], flight['Dept_Time_Minutes'])
+                    ac['available_time'] = base_time + flight_duration + ac['turnaround_time'] + delay_minutes + repair_time
 
         self.current_step += 1
         terminated = self.current_step >= len(self.schedule)

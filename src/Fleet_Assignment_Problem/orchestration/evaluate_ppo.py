@@ -59,7 +59,8 @@ def evaluate_ppo():
     step_idx = 0
     
     while not (terminated or truncated):
-        action, _ = model.predict(obs, deterministic=True)
+        action_masks = env.action_masks()
+        action, _ = model.predict(obs, action_masks=action_masks, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
         
         flight = schedule_df.iloc[step_idx]

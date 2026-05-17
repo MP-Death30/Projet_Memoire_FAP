@@ -2,12 +2,13 @@ import pandas as pd
 import numpy as np
 import torch
 from pathlib import Path
+import gymnasium as gym
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
 from src.Fleet_Assignment_Problem.environments.fap_env import FAPEnv
 
-def mask_fn(env: FAPEnv) -> np.ndarray:
-    return env.action_masks()
+def mask_fn(env: gym.Env) -> np.ndarray:
+    return env.unwrapped.action_masks()
 
 def train_agent():
     BASE_DIR = Path(__file__).resolve().parents[3]
