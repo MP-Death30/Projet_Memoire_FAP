@@ -113,8 +113,8 @@ def generate_ppo_demand_state(route, start_date_str="2025-01-01"):
     
     return df_future[['date', 'route', 'predicted_demand']], code_dep, code_arr
 
-def map_demand_to_schedule(df_demand, code_dep, code_arr):
-    df_sched = pd.read_csv(SCHEDULE_FILE)
+def map_demand_to_schedule(df_demand, df_sched, code_dep, code_arr):
+    # Remplacement de l'import CSV par l'utilisation directe du DataFrame en paramètre
     df_sched['Dept Time'] = pd.to_datetime(df_sched['Dept Time'])
     df_sched['date'] = df_sched['Dept Time'].dt.normalize()
     

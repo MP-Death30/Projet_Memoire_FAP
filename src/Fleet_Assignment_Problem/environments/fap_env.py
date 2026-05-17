@@ -3,22 +3,29 @@ from gymnasium import spaces
 import numpy as np
 
 class FAPEnv(gym.Env):
-    def __init__(self, schedule_df, fleet_df, num_airports, base_spill_cost=1.5):
+    def __init__(self, fleet_df, num_airports, base_spill_cost=1.5):
         super(FAPEnv, self).__init__()
         
-        self.schedule = schedule_df
         self.fleet = fleet_df.to_dict('records')
         self.num_aircraft = len(self.fleet)
         self.num_airports = num_airports
         self.base_spill_cost = base_spill_cost
         
         self.action_space = spaces.Discrete(self.num_aircraft + 1)
-        obs_dim = 6 + (self.num_aircraft * 2) 
+        
+        # Dimensions One-Hot Encoding
+        obs_flight_dim = 4 + (self.num_airports * 2) # 4 vars continues + OHE Origine + OHE Dest
+        obs_fleet_dim = self.num_aircraft * (1 + self.num_airports) # Delta temps + OHE Position par avion
+        obs_dim = obs_flight_dim + obs_fleet_dim
+        
         self.observation_space = spaces.Box(low=-1.0, high=2.0, shape=(obs_dim,), dtype=np.float32)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.current_step = 0
+        
+        # Génération stochastique à chaque nouvel épisode
+        self.schedule = build_network_state_for_episode(self.num_aircraft)
         
         self.fleet_state = []
         for ac in self.fleet:
@@ -87,23 +94,32 @@ class FAPEnv(gym.Env):
             
         flight = self.schedule.iloc[self.current_step]
         
+        # One-Hot Encoding Vol
+        origin_ohe = np.zeros(self.num_airports, dtype=np.float32)
+        origin_ohe[int(flight['Origin_Idx'])] = 1.0
+        
+        dest_ohe = np.zeros(self.num_airports, dtype=np.float32)
+        dest_ohe[int(flight['Dest_Idx'])] = 1.0
+        
         obs_flight = [
             (flight['Dept_Time_Minutes'] % 1440.0) / 1440.0, 
             (flight['Arr_Time_Minutes'] % 1440.0) / 1440.0,
-            flight['Origin_Idx'] / self.num_airports,
-            flight['Dest_Idx'] / self.num_airports,
             flight['Predicted_Demand'] / 300.0,
             flight['Tarif'] / 500.0
         ]
+        obs_flight.extend(origin_ohe)
+        obs_flight.extend(dest_ohe)
         
+        # One-Hot Encoding Flotte
         obs_fleet = []
         for ac in self.fleet_state:
             time_delta = (ac['available_time'] - flight['Dept_Time_Minutes']) / 1440.0
             time_delta = np.clip(time_delta, -1.0, 1.0)
             
-            obs_fleet.extend([
-                ac['position'] / self.num_airports,
-                time_delta
-            ])
+            pos_ohe = np.zeros(self.num_airports, dtype=np.float32)
+            pos_ohe[int(ac['position'])] = 1.0
+            
+            obs_fleet.append(time_delta)
+            obs_fleet.extend(pos_ohe)
             
         return np.array(obs_flight + obs_fleet, dtype=np.float32)

@@ -54,6 +54,9 @@ def train_agent():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # Augmentation de la capacité du réseau Acteur-Critique
+    policy_kwargs = dict(net_arch=[256, 256])
+
     model = MaskablePPO(
         "MlpPolicy", 
         env, 
@@ -63,10 +66,12 @@ def train_agent():
         n_steps=2048,
         batch_size=64,
         gamma=0.99,
-        ent_coef=0.01
+        ent_coef=0.01,
+        policy_kwargs=policy_kwargs # Ajout ici
     )
 
-    model.learn(total_timesteps=150000)
+    # Allongement de la phase d'apprentissage
+    model.learn(total_timesteps=1500000) 
     model.save(MODEL_DIR / "maskable_ppo_model")
 
 if __name__ == "__main__":
