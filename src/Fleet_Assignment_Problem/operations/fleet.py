@@ -22,18 +22,19 @@ def process_fleet_data():
         'Famille': 'fleet_id',
         'Moy. n_pax': 'capacity',
         'Moy. Cruise_speed (km/h)': 'speed_kmh',
-        'Moy. nominal_range (km)': 'range_km'
+        'Moy. nominal_range (km)': 'range_km',
+        'Cout_operation': 'cost'
     }
     
     available_cols = [c for c in cols_to_keep.keys() if c in df.columns]
     df = df[available_cols].rename(columns=cols_to_keep)
 
-    numeric_cols = ['capacity', 'speed_kmh', 'range_km']
+    numeric_cols = ['capacity', 'speed_kmh', 'range_km', 'cost']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    df_clean = df.dropna(subset=['fleet_id', 'capacity', 'speed_kmh', 'range_km']).copy()
+    df_clean = df.dropna(subset=['fleet_id', 'capacity', 'speed_kmh', 'range_km', 'cost']).copy()
 
     df_clean.to_parquet(OUTPUT_FILE, index=False)
     
