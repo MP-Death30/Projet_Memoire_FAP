@@ -10,7 +10,6 @@ SCALER_PATH = BASE_DIR / "models" / "scaler_target.pkl"
 DATA_LSTM_FILE = BASE_DIR / "data" / "processed" / "dataset_lstm.parquet"
 VACANCES_FILE = BASE_DIR / "data" / "raw" / "Evenement_pays" / "vacances_consolidees.parquet"
 EVENTS_FILE = BASE_DIR / "data" / "raw" / "Evenement_pays" / "Evenement_sport_tech_business_2023_2027.csv"
-SCHEDULE_FILE = BASE_DIR / "data" / "raw" / "Flight_Schedule" / "schedule_fap.csv"
 
 SEQ_LEN = 21
 HORIZON = 7
@@ -83,19 +82,14 @@ def build_future_context(target_dates, pays_dep_code, pays_arr_code):
     ]
     return df_future, df_future[cols_exo].values.flatten().reshape(1, -1)
 
-def generate_ppo_demand_state(route, start_date_str="2025-01-01"):
-    model = tf.keras.models.load_model(MODEL_PATH)
-    scaler = joblib.load(SCALER_PATH)
-    
-    df_history = pd.read_parquet(DATA_LSTM_FILE)
+def generate_ppo_demand_state(route, model, scaler, df_history, start_date_str="2025-01-01"):
     df_route = df_history[df_history['route'] == route].sort_values('date').reset_index(drop=True)
-    
     start_date = pd.to_datetime(start_date_str)
     history_cutoff = start_date - pd.Timedelta(days=1)
     
     history_seq = df_route[df_route['date'] <= history_cutoff].tail(SEQ_LEN)
     if len(history_seq) < SEQ_LEN:
-        raise ValueError(f"Profondeur historique insuffisante. {len(history_seq)}/{SEQ_LEN} jours disponibles.")
+        raise ValueError("Profondeur historique insuffisante.")
         
     X_seq = scaler.transform(history_seq[['value_jour']]).reshape(1, SEQ_LEN, 1)
     
@@ -110,11 +104,9 @@ def generate_ppo_demand_state(route, start_date_str="2025-01-01"):
     
     df_future['route'] = route
     df_future['predicted_demand'] = np.round(pred_values).astype(int).clip(min=0)
-    
     return df_future[['date', 'route', 'predicted_demand']], code_dep, code_arr
 
 def map_demand_to_schedule(df_demand, df_sched, code_dep, code_arr):
-    # Remplacement de l'import CSV par l'utilisation directe du DataFrame en paramètre
     df_sched['Dept Time'] = pd.to_datetime(df_sched['Dept Time'])
     df_sched['date'] = df_sched['Dept Time'].dt.normalize()
     
@@ -139,42 +131,29 @@ def map_demand_to_schedule(df_demand, df_sched, code_dep, code_arr):
 
     return df_merged[['Flight#', 'From', 'To', 'Dept Time', 'Arr Time', 'flight_demand', 'Tarif']].sort_values('Dept Time')
 
-if __name__ == "__main__":
-    import logging
-    
-    logging.info("Extraction du référentiel complet des routes...")
-    df_history = pd.read_parquet(DATA_LSTM_FILE)
+def predict_demand_for_schedule(df_sched, model, scaler, df_history, start_date_str="2025-01-01"):
     routes_actives = df_history['route'].unique()
+    route_map = { (r.split('_')[1], r.split('_')[3]): r for r in routes_actives if len(r.split('_')) >= 4 }
+
+    df_sched['Dept Time'] = pd.to_datetime(df_sched['Dept Time'])
+    df_sched['Arr Time'] = pd.to_datetime(df_sched['Arr Time'])
     
-    date_cible = "2025-01-01"
     ppo_states_global = []
     
-    logging.info(f"Début de l'itération sur {len(routes_actives)} routes...")
+    for (code_dep, code_arr), group in df_sched.groupby(['From', 'To']):
+        route = route_map.get((code_dep, code_arr)) or route_map.get((code_arr, code_dep))
+        if route:
+            try:
+                df_demande, _, _ = generate_ppo_demand_state(route, model, scaler, df_history, start_date_str)
+                df_ppo_state = map_demand_to_schedule(df_demande, group.copy(), code_dep, code_arr)
+                if not df_ppo_state.empty:
+                    ppo_states_global.append(df_ppo_state)
+            except Exception:
+                continue
     
-    for route in routes_actives:
-        try:
-            df_demande, origin_icao, dest_icao = generate_ppo_demand_state(route, date_cible)
-            df_ppo_state = map_demand_to_schedule(df_demande, origin_icao, dest_icao)
-            
-            if not df_ppo_state.empty:
-                ppo_states_global.append(df_ppo_state)
-                
-        except Exception as e:
-            # Élimination silencieuse des routes aux historiques fragmentaires (< 21 jours)
-            # ou absentes du planning de vol généré
-            continue
-            
     if ppo_states_global:
-        df_final_network_state = pd.concat(ppo_states_global, ignore_index=True)
-        df_final_network_state = df_final_network_state.sort_values(by=['Dept Time'])
-        
-        # --- AJOUT DE LA SAUVEGARDE ---
-        OUTPUT_PATH = BASE_DIR / "data" / "processed" / "ppo_network_state_2025.parquet"
-        df_final_network_state.to_parquet(OUTPUT_PATH, index=False)
-        
-        print(f"Résultat enregistré avec succès : {OUTPUT_PATH}")
-        # ------------------------------
+        final_df = pd.concat(ppo_states_global, ignore_index=True)
+        return final_df.sort_values('Dept Time').reset_index(drop=True)
     else:
-        logging.error("Échec : Aucune route n'a généré de matrice d'état valide.")
-
-        
+        df_sched['flight_demand'] = 150
+        return df_sche

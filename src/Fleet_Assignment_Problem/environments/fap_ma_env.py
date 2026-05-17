@@ -45,8 +45,10 @@ class FAPParallelEnv:
         
         obs_flights = np.vstack([active_flights, virtual_flight]) if len(active_flights) > 0 else virtual_flight
         
-        pad_len = self.max_flights - len(obs_flights)
-        pad_mask = np.zeros(self.max_flights, dtype=bool)
+        # Dimensionnement à max_flights + 1 pour inclure de façon permanente l'action de spill/wait
+        pad_len = (self.max_flights + 1) - len(obs_flights)
+        pad_mask = np.zeros(self.max_flights + 1, dtype=bool)
+        
         if pad_len > 0:
             obs_flights = np.vstack([obs_flights, np.zeros((pad_len, 6), dtype=np.float32)])
             pad_mask[-pad_len:] = True
@@ -57,7 +59,8 @@ class FAPParallelEnv:
         active_flights = self.flights[~self.flight_assigned]
         num_active = len(active_flights)
         
-        masks = np.zeros((self.num_agents, self.max_flights), dtype=bool)
+        # Matrice augmentée (+1) pour prévenir le dépassement d'index à l'initialisation
+        masks = np.zeros((self.num_agents, self.max_flights + 1), dtype=bool)
         
         for i in range(self.num_agents):
             pos = self.agents[i, 0]
@@ -69,6 +72,7 @@ class FAPParallelEnv:
                 if pos == origin and dispo <= dep_time:
                     masks[i, j] = True
             
+            # Le vol virtuel est toujours positionné juste après les vols actifs
             masks[i, num_active] = True 
 
         return torch.tensor(masks)
@@ -111,10 +115,6 @@ class FAPParallelEnv:
             self.agents[best_agent, 0] = self.flights[f_idx, 1] 
             flight_duration = self.flights[f_idx, 3] - self.flights[f_idx, 2]
             self.agents[best_agent, 1] = self.flights[f_idx, 2] + flight_duration + 50.0 
-            
-            for a_idx in agents_targeting:
-                if a_idx != best_agent:
-                    pass 
 
         done = self.flight_assigned.all()
         
