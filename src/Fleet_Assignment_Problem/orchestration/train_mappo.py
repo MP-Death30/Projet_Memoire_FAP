@@ -21,7 +21,7 @@ def run_training():
                 'position': 0.0, 
                 'capacity': float(row['capacity']), 
                 'speed': float(row['speed_kmh']), 
-                'cost': 5000.0 # Coût fixe par défaut
+                'cost': float(row['cost'])
             })
 
     # Dimension spatiale : 50 aéroports (Ajuster selon len(airports) réel)

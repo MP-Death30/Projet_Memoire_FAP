@@ -15,7 +15,12 @@ def run_evaluation():
     physical_fleet = []
     for _, row in fleet_types_df.iterrows():
         for _ in range(inventory_map.get(row['fleet_id'], 5)):
-            physical_fleet.append({'position': 0.0, 'capacity': float(row['capacity']), 'speed': float(row['speed_kmh']), 'cost': 5000.0})
+            physical_fleet.append({
+                'position': 0.0, 
+                'capacity': float(row['capacity']), 
+                'speed': float(row['speed_kmh']), 
+                'cost': float(row['cost'])
+            })
 
     env = FAPParallelEnv(num_airports=50, max_flights=200)
     
