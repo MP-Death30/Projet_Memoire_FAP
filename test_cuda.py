@@ -9,3 +9,5 @@ if cuda_dispo:
     print(f"Localisation d'un tenseur de test : {t.device}")
 else:
     print("Échec critique : PyTorch est cantonné au CPU.")
+
+    
