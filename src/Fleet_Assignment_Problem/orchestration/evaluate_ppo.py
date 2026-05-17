@@ -32,7 +32,7 @@ def evaluate_ppo():
     physical_fleet = []
     tail_id = 0
 
-    tail_to_type = {ac['tail_number']: ac['fleet_id'] for ac in physical_fleet}
+    
 
     for _, row in fleet_types_df.iterrows():
         count = inventory_map.get(row['fleet_id'], 5)
@@ -43,6 +43,8 @@ def evaluate_ppo():
             tail_id += 1
             
     fleet_df = pd.DataFrame(physical_fleet)
+
+    tail_to_type = {ac['tail_number']: ac['fleet_id'] for ac in physical_fleet}
     
     env = FAPEnv(schedule_df, fleet_df, len(airports))
     env = ActionMasker(env, mask_fn)
@@ -62,7 +64,18 @@ def evaluate_ppo():
         
         flight = schedule_df.iloc[step_idx]
         is_spilled = (action == len(physical_fleet))
-        tail_num = 'UNASSIGNED' if is_spilled else physical_fleet[action]['tail_number']
+
+        if is_spilled:
+            tail_num = 'UNASSIGNED'
+            ac_type = 'NONE'
+        else:
+            # Sécurité pour éviter les index hors limites
+            if action < len(physical_fleet):
+                tail_num = physical_fleet[action]['tail_number']
+                ac_type = tail_to_type.get(tail_num, 'UNKNOWN')
+            else:
+                tail_num = 'INVALID_INDEX'
+                ac_type = 'ERROR'
         
         results.append({
             'Flight#': flight['Flight#'],
