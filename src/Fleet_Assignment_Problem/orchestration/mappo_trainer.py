@@ -1,7 +1,7 @@
 import torch
 import torch.optim as optim
-from pointer_net import MAPPOPolicy
-from fap_ma_env import FAPParallelEnv
+from src.Fleet_Assignment_Problem.models.pointer_net import MAPPOPolicy
+from src.Fleet_Assignment_Problem.environments.fap_ma_env import FAPParallelEnv
 import numpy as np
 from src.Fleet_Assignment_Problem.operations.generate_schedule import generate_dynamic_schedule
 
