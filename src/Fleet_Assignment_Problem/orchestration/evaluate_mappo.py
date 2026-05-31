@@ -2,7 +2,6 @@ import torch
 import pandas as pd
 from pathlib import Path
 import json
-import os
 from src.Fleet_Assignment_Problem.environments.fap_ma_env import FAPParallelEnv
 from src.Fleet_Assignment_Problem.models.pointer_net import MAPPOPolicy
 
@@ -14,7 +13,6 @@ def run_evaluation():
 
     fleet_types_df = pd.read_parquet(FLEET_FILE)
     inventory_map = {'737': 12, 'A320': 8, 'Embraer190': 8}
-    # Cartographie des préfixes d'identification
     prefix_map = {'737': 'B', 'A320': 'A', 'Embraer190': 'E'}
     
     physical_fleet = []
@@ -47,7 +45,6 @@ def run_evaluation():
     env = FAPParallelEnv(num_airports=num_airports, max_flights=max_flights)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Initialisation du modèle sur : {device}")
 
     policy = MAPPOPolicy(flight_dim=6, agent_dim=5, embed_dim=128).to(device)
     policy.load_state_dict(torch.load(MODEL_PATH, map_location=device))
@@ -72,10 +69,7 @@ def run_evaluation():
     masks = masks.to(device)
     
     done = False
-    total_rewards = 0
     step_count = 0
-
-    print(f"Début de l'assignation pour {max_flights} vols...")
 
     with torch.no_grad():
         while not done:
@@ -95,21 +89,10 @@ def run_evaluation():
                 pad_mask = pad_mask.to(device)
                 masks = masks.to(device)
 
-            total_rewards += rewards.sum().item()
             step_count += 1
-            
-            vols_assignes = env.flight_assigned.sum()
-            
-            if step_count % 50 == 0:
-                print(f"Cycle {step_count} | Progression réelle : {vols_assignes} / {max_flights} vols assignés.")
-                
             if step_count > max_flights * 3:
-                print(f"\n[!] Arrêt de sécurité : {max_flights - vols_assignes} vols sont définitivement inassignables (Spill forcé).")
                 break
 
-    print(f"\nÉvaluation terminale. Marge opérationnelle brute : {total_rewards:.2f}")
-
-    print("Extraction et sauvegarde de la matrice d'allocations...")
     schedule_df['Agent_ID'] = -1
     schedule_df['Aircraft_Code'] = "SPILL"
     schedule_df['Agent_Capacity'] = 0.0
@@ -132,6 +115,9 @@ def run_evaluation():
     unassigned_mask = schedule_df['Agent_ID'] == -1
     schedule_df.loc[unassigned_mask, 'Margin_Generated'] = -schedule_df.loc[unassigned_mask, 'Spill_Cost']
 
+    marge_totale = schedule_df['Margin_Generated'].sum()
+    taux_spill = (schedule_df['Agent_ID'] == -1).mean() * 100
+
     metrics = {
         "Margin_Generated": float(marge_totale),
         "Spill_Rate": float(taux_spill)
@@ -143,7 +129,6 @@ def run_evaluation():
 
     CSV_PATH = BASE_DIR / "data" / "processed" / "mappo_allocations.csv"
     schedule_df.to_csv(CSV_PATH, index=False)
-    print(f"Export CSV terminé : {CSV_PATH}")
 
 if __name__ == "__main__":
     run_evaluation()

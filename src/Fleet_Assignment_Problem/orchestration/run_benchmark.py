@@ -10,7 +10,6 @@ def run_benchmark():
     METRICS_FILE = BASE_DIR / "data" / "processed" / "temp_metrics.json"
     RESULTS_CSV = BASE_DIR / "data" / "processed" / "benchmark_results.csv"
     
-    # Définition des séquences de test
     pipelines = [
         {"agent": "PPO", "predictor": "LSTM"},
         {"agent": "PPO", "predictor": "XGBOOST"},
@@ -25,11 +24,9 @@ def run_benchmark():
         predictor = pipe["predictor"]
         print(f"\n--- DÉMARRAGE PIPELINE : {agent} + {predictor} ---")
         
-        # Injection de la configuration dans l'environnement OS
         env = os.environ.copy()
         env["PREDICTOR_TYPE"] = predictor
         
-        # Purge des métriques précédentes
         if METRICS_FILE.exists():
             METRICS_FILE.unlink()
             
@@ -44,25 +41,21 @@ def run_benchmark():
         }
         
         try:
-            # 1. Génération du Pool (PPO uniquement) ou Matrice (MAPPO)
             t0 = time.perf_counter()
             if agent == "PPO":
                 subprocess.run(["python", "src/Fleet_Assignment_Problem/orchestration/generate_pool.py"], env=env, check=True)
             metrics_record["Pool_Gen_Time_sec"] = round(time.perf_counter() - t0, 2)
             
-            # 2. Entraînement
             t0 = time.perf_counter()
             train_script = f"src/Fleet_Assignment_Problem/models/train_{agent.lower()}.py"
             subprocess.run(["python", train_script], env=env, check=True)
             metrics_record["Train_Time_sec"] = round(time.perf_counter() - t0, 2)
             
-            # 3. Évaluation
             t0 = time.perf_counter()
             eval_script = f"src/Fleet_Assignment_Problem/orchestration/evaluate_{agent.lower()}.py"
             subprocess.run(["python", eval_script], env=env, check=True)
             metrics_record["Eval_Time_sec"] = round(time.perf_counter() - t0, 2)
             
-            # Récupération des métriques métier exportées par le script d'évaluation
             if METRICS_FILE.exists():
                 with open(METRICS_FILE, 'r') as f:
                     eval_metrics = json.load(f)
@@ -75,10 +68,9 @@ def run_benchmark():
             
         results.append(metrics_record)
         
-        # Sauvegarde incrémentale
         df_results = pd.DataFrame(results)
         df_results.to_csv(RESULTS_CSV, index=False)
-        print(f"Pipeline {agent}-{predictor} terminé. Métriques ajoutées au CSV.")
+        print(f"Pipeline {agent}-{predictor} terminé.")
 
     print(f"\nBenchmark global achevé. Registre : {RESULTS_CSV}")
 

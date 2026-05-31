@@ -46,7 +46,6 @@ class FAPParallelEnv:
         
         obs_flights = np.vstack([active_flights, virtual_flight]) if len(active_flights) > 0 else virtual_flight
         
-        # Dimensionnement à max_flights + 1 pour inclure de façon permanente l'action de spill/wait
         pad_len = (self.max_flights + 1) - len(obs_flights)
         pad_mask = np.zeros(self.max_flights + 1, dtype=bool)
         
@@ -60,7 +59,6 @@ class FAPParallelEnv:
         active_flights = self.flights[~self.flight_assigned]
         num_active = len(active_flights)
         
-        # Matrice augmentée (+1) pour prévenir le dépassement d'index à l'initialisation
         masks = np.zeros((self.num_agents, self.max_flights + 1), dtype=bool)
         
         for i in range(self.num_agents):
@@ -73,7 +71,6 @@ class FAPParallelEnv:
                 if pos == origin and dispo <= dep_time:
                     masks[i, j] = True
             
-            # Le vol virtuel est toujours positionné juste après les vols actifs
             masks[i, num_active] = True 
 
         return torch.tensor(masks)
@@ -123,11 +120,12 @@ class FAPParallelEnv:
             flight_duration = self.flights[f_idx, 3] - self.flights[f_idx, 2]
             self.agents[best_agent, 1] = self.flights[f_idx, 2] + flight_duration + 50.0 
 
-        # Auto-Spill : Purge temporelle des vols inassignables
+        # Auto-Spill : Purge temporelle des vols inassignables pendant l'apprentissage
         remaining_indices = np.where(~self.flight_assigned)[0]
         for f_idx in remaining_indices:
             dep_time = self.flights[f_idx, 2]
-            # Si le premier agent disponible est en retard, le vol est perdu
+            
+            # Si aucun agent ne pourra jamais atteindre ce vol à temps
             if np.min(self.agents[:, 1]) > dep_time:
                 self.flight_assigned[f_idx] = True
                 
@@ -135,6 +133,7 @@ class FAPParallelEnv:
                 fare = self.flights[f_idx, 5]
                 spill_cost = unmet_pax * fare * self.spill_penalty_coef
                 
+                # Pénalité partagée
                 rewards -= (spill_cost / self.num_agents)
                 
                 self.assignment_history.append({

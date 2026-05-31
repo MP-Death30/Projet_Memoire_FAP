@@ -1,7 +1,6 @@
 import pandas as pd
 from pathlib import Path
 import json
-import os
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
 from src.Fleet_Assignment_Problem.environments.fap_env import FAPEnv
@@ -26,7 +25,6 @@ def evaluate_ppo():
     schedule_df['Origin_Idx'] = schedule_df['From'].map(airport_to_idx)
     schedule_df['Dest_Idx'] = schedule_df['To'].map(airport_to_idx)
     
-    # Sécurisation et bridage strict de la demande maximale (Alignement MAPPO)
     if 'flight_demand' not in schedule_df.columns:
         schedule_df['flight_demand'] = 150.0
     schedule_df['Predicted_Demand'] = schedule_df['flight_demand'].clip(upper=180)
@@ -44,7 +42,6 @@ def evaluate_ppo():
         count = inventory_map.get(f_id, 5)
         for _ in range(count):
             ac = row.to_dict()
-            # FAPEnv utilise 'cost_per_flight', MAPPO utilise 'cost'
             if 'cost' in ac and 'cost_per_flight' not in ac:
                 ac['cost_per_flight'] = float(ac['cost'])
             ac['tail_number'] = f"AC_{tail_id}"
@@ -63,7 +60,6 @@ def evaluate_ppo():
     terminated = False
     truncated = False
     
-    # Préparation de l'architecture d'export (Format MAPPO unifié)
     schedule_df['Agent_ID'] = -1
     schedule_df['Aircraft_Code'] = "SPILL"
     schedule_df['Agent_Capacity'] = 0.0
@@ -72,8 +68,6 @@ def evaluate_ppo():
     schedule_df['Spill_Cost'] = 0.0
     
     step_idx = 0
-    
-    print(f"Début de l'évaluation PPO pour {len(schedule_df)} vols...")
     
     while not (terminated or truncated):
         action_masks = env.action_masks()
@@ -91,23 +85,22 @@ def evaluate_ppo():
             cout_vol = float(ac.get('cost', ac.get('cost_per_flight', 5000)))
             schedule_df.at[step_idx, 'Agent_Cost'] = cout_vol
             
-            # Marge financière brute du vol assigné
             margin = info.get('revenue', 0) - cout_vol
             schedule_df.at[step_idx, 'Margin_Generated'] = margin
 
         step_idx += 1
 
-    # Calcul vectorisé du coût d'opportunité (Spill) basé sur la demande
     unmet_pax = (schedule_df['Predicted_Demand'] - schedule_df['Agent_Capacity']).clip(lower=0)
     schedule_df['Spill_Cost'] = unmet_pax * schedule_df['Tarif']
 
-    # Application de la pénalité sur les vols orphelins
     unassigned_mask = schedule_df['Agent_ID'] == -1
     schedule_df.loc[unassigned_mask, 'Margin_Generated'] = -schedule_df.loc[unassigned_mask, 'Spill_Cost']
 
-    # Nettoyage des variables techniques spécifiques à l'environnement PPO avant export
     cols_to_drop = ['Origin_Idx', 'Dest_Idx', 'Dept_Time_Minutes', 'Arr_Time_Minutes']
     export_df = schedule_df.drop(columns=[c for c in cols_to_drop if c in schedule_df.columns])
+
+    marge_totale = export_df['Margin_Generated'].sum()
+    taux_spill = (export_df['Agent_ID'] == -1).mean() * 100
 
     metrics = {
         "Margin_Generated": float(marge_totale),
@@ -118,17 +111,8 @@ def evaluate_ppo():
     with open(METRICS_FILE, 'w') as f:
         json.dump(metrics, f)
 
-    # Modification du nom de sortie pour s'aligner sur MAPPO
     CSV_PATH = BASE_DIR / "data" / "processed" / "ppo_allocations.csv"
     export_df.to_csv(CSV_PATH, index=False)
-    
-    marge_totale = export_df['Margin_Generated'].sum()
-    taux_spill = (export_df['Agent_ID'] == -1).mean() * 100
-    
-    print(f"\nExtraction terminée : {step_idx} vols traités.")
-    print(f"Taux de Spill (Vols non assignés) : {taux_spill:.2f}%")
-    print(f"Marge opérationnelle absolue : {marge_totale:.2f}")
-    print(f"Export CSV terminé : {CSV_PATH}")
 
 if __name__ == "__main__":
     evaluate_ppo()
