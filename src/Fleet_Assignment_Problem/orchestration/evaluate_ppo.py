@@ -1,5 +1,7 @@
 import pandas as pd
 from pathlib import Path
+import json
+import os
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
 from src.Fleet_Assignment_Problem.environments.fap_env import FAPEnv
@@ -106,6 +108,15 @@ def evaluate_ppo():
     # Nettoyage des variables techniques spécifiques à l'environnement PPO avant export
     cols_to_drop = ['Origin_Idx', 'Dest_Idx', 'Dept_Time_Minutes', 'Arr_Time_Minutes']
     export_df = schedule_df.drop(columns=[c for c in cols_to_drop if c in schedule_df.columns])
+
+    metrics = {
+        "Margin_Generated": float(marge_totale),
+        "Spill_Rate": float(taux_spill)
+    }
+    
+    METRICS_FILE = BASE_DIR / "data" / "processed" / "temp_metrics.json"
+    with open(METRICS_FILE, 'w') as f:
+        json.dump(metrics, f)
 
     # Modification du nom de sortie pour s'aligner sur MAPPO
     CSV_PATH = BASE_DIR / "data" / "processed" / "ppo_allocations.csv"

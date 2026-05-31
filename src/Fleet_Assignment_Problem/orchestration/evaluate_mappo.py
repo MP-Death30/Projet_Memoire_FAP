@@ -1,6 +1,8 @@
 import torch
 import pandas as pd
 from pathlib import Path
+import json
+import os
 from src.Fleet_Assignment_Problem.environments.fap_ma_env import FAPParallelEnv
 from src.Fleet_Assignment_Problem.models.pointer_net import MAPPOPolicy
 
@@ -129,6 +131,15 @@ def run_evaluation():
 
     unassigned_mask = schedule_df['Agent_ID'] == -1
     schedule_df.loc[unassigned_mask, 'Margin_Generated'] = -schedule_df.loc[unassigned_mask, 'Spill_Cost']
+
+    metrics = {
+        "Margin_Generated": float(marge_totale),
+        "Spill_Rate": float(taux_spill)
+    }
+    
+    METRICS_FILE = BASE_DIR / "data" / "processed" / "temp_metrics.json"
+    with open(METRICS_FILE, 'w') as f:
+        json.dump(metrics, f)
 
     CSV_PATH = BASE_DIR / "data" / "processed" / "mappo_allocations.csv"
     schedule_df.to_csv(CSV_PATH, index=False)
