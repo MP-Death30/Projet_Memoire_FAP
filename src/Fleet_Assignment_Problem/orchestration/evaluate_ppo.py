@@ -3,7 +3,7 @@ from pathlib import Path
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
 from src.Fleet_Assignment_Problem.environments.fap_env import FAPEnv
-from src.Fleet_Assignment_Problem.orchestration.train_ppo import mask_fn
+from src.Fleet_Assignment_Problem.models.train_ppo import mask_fn
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 SCHEDULE_FILE = BASE_DIR / "data" / "processed" / "eval_schedule_fap.parquet"
