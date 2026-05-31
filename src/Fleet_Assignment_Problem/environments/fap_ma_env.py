@@ -123,13 +123,27 @@ class FAPParallelEnv:
             flight_duration = self.flights[f_idx, 3] - self.flights[f_idx, 2]
             self.agents[best_agent, 1] = self.flights[f_idx, 2] + flight_duration + 50.0 
 
+        # Auto-Spill : Purge temporelle des vols inassignables
+        remaining_indices = np.where(~self.flight_assigned)[0]
+        for f_idx in remaining_indices:
+            dep_time = self.flights[f_idx, 2]
+            # Si le premier agent disponible est en retard, le vol est perdu
+            if np.min(self.agents[:, 1]) > dep_time:
+                self.flight_assigned[f_idx] = True
+                
+                unmet_pax = self.flights[f_idx, 4]
+                fare = self.flights[f_idx, 5]
+                spill_cost = unmet_pax * fare * self.spill_penalty_coef
+                
+                rewards -= (spill_cost / self.num_agents)
+                
+                self.assignment_history.append({
+                    'flight_index': f_idx,
+                    'agent_index': -1,
+                    'margin': -spill_cost
+                })
+
         done = self.flight_assigned.all()
-        
-        if done:
-            unmet_pax = self.flights[~self.flight_assigned, 4]
-            fares = self.flights[~self.flight_assigned, 5]
-            spill_penalty = np.sum(unmet_pax * fares) * self.spill_penalty_coef
-            rewards -= spill_penalty / self.num_agents
 
         obs_a, obs_f, pad_mask = self._get_obs()
         masks = self._get_masks()
