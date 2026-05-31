@@ -37,6 +37,7 @@ class FAPParallelEnv:
         ], dtype=np.float32)
         
         self.flight_assigned = np.zeros(self.num_flights, dtype=bool)
+        self.assignment_history = []
         return self._get_obs(), self._get_masks()
 
     def _get_obs(self):
@@ -111,6 +112,12 @@ class FAPParallelEnv:
             
             rewards[best_agent] = best_margin
             self.flight_assigned[f_idx] = True
+
+            self.assignment_history.append({
+                'flight_index': f_idx,
+                'agent_index': best_agent,
+                'margin': best_margin
+            })
             
             self.agents[best_agent, 0] = self.flights[f_idx, 1] 
             flight_duration = self.flights[f_idx, 3] - self.flights[f_idx, 2]

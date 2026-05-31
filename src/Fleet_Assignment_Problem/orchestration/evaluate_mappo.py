@@ -12,18 +12,28 @@ def run_evaluation():
 
     fleet_types_df = pd.read_parquet(FLEET_FILE)
     inventory_map = {'737': 12, 'A320': 8, 'Embraer190': 8}
+    # Cartographie des préfixes d'identification
+    prefix_map = {'737': 'B', 'A320': 'A', 'Embraer190': 'E'}
+    
     physical_fleet = []
     for _, row in fleet_types_df.iterrows():
-        for _ in range(inventory_map.get(row['fleet_id'], 5)):
+        f_id = row['fleet_id']
+        prefix = prefix_map.get(f_id, 'U')
+        for _ in range(inventory_map.get(f_id, 5)):
             physical_fleet.append({
                 'position': 0.0, 
                 'capacity': float(row['capacity']), 
                 'speed': float(row['speed_kmh']), 
-                'cost': float(row['cost'])
+                'cost': float(row['cost']),
+                'prefix': prefix
             })
 
     schedule_df = pd.read_parquet(EVAL_FILE)
     
+    if 'flight_demand' not in schedule_df.columns:
+        schedule_df['flight_demand'] = 150.0
+    schedule_df['Predicted_Demand'] = schedule_df['flight_demand'].clip(upper=180)
+
     airports = pd.concat([schedule_df['From'], schedule_df['To']]).unique()
     num_airports = len(airports)
     max_flights = len(schedule_df)
@@ -34,23 +44,36 @@ def run_evaluation():
 
     env = FAPParallelEnv(num_airports=num_airports, max_flights=max_flights)
     
-    policy = MAPPOPolicy(flight_dim=6, agent_dim=5, embed_dim=128)
-    policy.load_state_dict(torch.load(MODEL_PATH))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Initialisation du modèle sur : {device}")
+
+    policy = MAPPOPolicy(flight_dim=6, agent_dim=5, embed_dim=128).to(device)
+    policy.load_state_dict(torch.load(MODEL_PATH, map_location=device))
     policy.eval()
+
+    min_time = schedule_df['Dept Time'].min().timestamp() / 60.0
 
     flights_data = [{
         'origin': float(airport_to_idx[r['From']]), 
         'dest': float(airport_to_idx[r['To']]), 
-        'dep_time': r['Dept Time'].timestamp() / 60.0, 
-        'arr_time': r['Arr Time'].timestamp() / 60.0, 
-        'pax': float(r.get('flight_demand', 150)), 
+        'dep_time': (r['Dept Time'].timestamp() / 60.0) - min_time, 
+        'arr_time': (r['Arr Time'].timestamp() / 60.0) - min_time, 
+        'pax': float(r['Predicted_Demand']), 
         'fare': float(r['Tarif'])
     } for _, r in schedule_df.iterrows()]
 
     (obs_a, obs_f, pad_mask), masks = env.reset(physical_fleet, flights_data)
     
+    obs_a = obs_a.to(device)
+    obs_f = obs_f.to(device)
+    pad_mask = pad_mask.to(device)
+    masks = masks.to(device)
+    
     done = False
     total_rewards = 0
+    step_count = 0
+
+    print(f"Début de l'assignation pour {max_flights} vols...")
 
     with torch.no_grad():
         while not done:
@@ -63,9 +86,53 @@ def run_evaluation():
             actions = torch.argmax(logits, dim=-1).squeeze(0)
             
             obs_a, obs_f, pad_mask, masks, rewards, done = env.step(actions)
-            total_rewards += rewards.sum().item()
+            
+            if not done:
+                obs_a = obs_a.to(device)
+                obs_f = obs_f.to(device)
+                pad_mask = pad_mask.to(device)
+                masks = masks.to(device)
 
-    print(f"Évaluation terminale. Marge opérationnelle brute : {total_rewards:.2f}")
+            total_rewards += rewards.sum().item()
+            step_count += 1
+            
+            vols_assignes = env.flight_assigned.sum()
+            
+            if step_count % 50 == 0:
+                print(f"Cycle {step_count} | Progression réelle : {vols_assignes} / {max_flights} vols assignés.")
+                
+            if step_count > max_flights * 3:
+                print(f"\n[!] Arrêt de sécurité : {max_flights - vols_assignes} vols sont définitivement inassignables (Spill forcé).")
+                break
+
+    print(f"\nÉvaluation terminale. Marge opérationnelle brute : {total_rewards:.2f}")
+
+    print("Extraction et sauvegarde de la matrice d'allocations...")
+    schedule_df['Agent_ID'] = -1
+    schedule_df['Aircraft_Code'] = "SPILL"
+    schedule_df['Agent_Capacity'] = 0.0
+    schedule_df['Agent_Cost'] = 0.0
+    schedule_df['Margin_Generated'] = 0.0
+    schedule_df['Spill_Cost'] = 0.0
+
+    for record in env.assignment_history:
+        f_idx = record['flight_index']
+        a_idx = record['agent_index']
+        schedule_df.at[f_idx, 'Agent_ID'] = a_idx
+        schedule_df.at[f_idx, 'Aircraft_Code'] = f"{physical_fleet[a_idx]['prefix']}{a_idx}"
+        schedule_df.at[f_idx, 'Agent_Capacity'] = physical_fleet[a_idx]['capacity']
+        schedule_df.at[f_idx, 'Agent_Cost'] = physical_fleet[a_idx]['cost']
+        schedule_df.at[f_idx, 'Margin_Generated'] = record['margin']
+
+    unmet_pax = (schedule_df['Predicted_Demand'] - schedule_df['Agent_Capacity']).clip(lower=0)
+    schedule_df['Spill_Cost'] = unmet_pax * schedule_df['Tarif']
+
+    unassigned_mask = schedule_df['Agent_ID'] == -1
+    schedule_df.loc[unassigned_mask, 'Margin_Generated'] = -schedule_df.loc[unassigned_mask, 'Spill_Cost']
+
+    CSV_PATH = BASE_DIR / "data" / "processed" / "mappo_allocations.csv"
+    schedule_df.to_csv(CSV_PATH, index=False)
+    print(f"Export CSV terminé : {CSV_PATH}")
 
 if __name__ == "__main__":
     run_evaluation()

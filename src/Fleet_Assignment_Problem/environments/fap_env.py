@@ -3,9 +3,11 @@ from gymnasium import spaces
 import numpy as np
 
 class FAPEnv(gym.Env):
-    def __init__(self, fleet_df, num_airports, base_spill_cost=1.5):
+    # Ajout de schedule_df dans la signature pour unifier entraînement et évaluation
+    def __init__(self, schedule_df, fleet_df, num_airports, base_spill_cost=1.5):
         super(FAPEnv, self).__init__()
         
+        self.schedule_df = schedule_df # Sauvegarde du planning injecté
         self.fleet = fleet_df.to_dict('records')
         self.num_aircraft = len(self.fleet)
         self.num_airports = num_airports
@@ -24,8 +26,8 @@ class FAPEnv(gym.Env):
         super().reset(seed=seed)
         self.current_step = 0
         
-        # Génération stochastique à chaque nouvel épisode
-        self.schedule = build_network_state_for_episode(self.num_aircraft)
+        # On utilise une copie sécurisée du planning injecté, garantissant le déterminisme en évaluation
+        self.schedule = self.schedule_df.copy()
         
         self.fleet_state = []
         for ac in self.fleet:

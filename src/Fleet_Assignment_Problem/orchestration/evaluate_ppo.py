@@ -6,7 +6,7 @@ from src.Fleet_Assignment_Problem.environments.fap_env import FAPEnv
 from src.Fleet_Assignment_Problem.orchestration.train_ppo import mask_fn
 
 BASE_DIR = Path(__file__).resolve().parents[3]
-SCHEDULE_FILE = BASE_DIR / "data" / "processed" / "ppo_network_state_2025.parquet"
+SCHEDULE_FILE = BASE_DIR / "data" / "processed" / "eval_schedule_fap.parquet"
 FLEET_FILE = BASE_DIR / "data" / "processed" / "fleet_data.parquet"
 MODEL_PATH = BASE_DIR / "models" / "ppo_fap" / "maskable_ppo_model"
 
@@ -23,29 +23,35 @@ def evaluate_ppo():
     airport_to_idx = {apt: i for i, apt in enumerate(airports)}
     schedule_df['Origin_Idx'] = schedule_df['From'].map(airport_to_idx)
     schedule_df['Dest_Idx'] = schedule_df['To'].map(airport_to_idx)
+    
+    # Sécurisation et bridage strict de la demande maximale (Alignement MAPPO)
+    if 'flight_demand' not in schedule_df.columns:
+        schedule_df['flight_demand'] = 150.0
     schedule_df['Predicted_Demand'] = schedule_df['flight_demand'].clip(upper=180)
 
     fleet_types_df = pd.read_parquet(FLEET_FILE)
     inventory_map = {'737': 12, 'A320': 8, 'Embraer190': 8}
+    prefix_map = {'737': 'B', 'A320': 'A', 'Embraer190': 'E'}
     
-
     physical_fleet = []
     tail_id = 0
 
-    
-
     for _, row in fleet_types_df.iterrows():
-        count = inventory_map.get(row['fleet_id'], 5)
+        f_id = row['fleet_id']
+        prefix = prefix_map.get(f_id, 'U')
+        count = inventory_map.get(f_id, 5)
         for _ in range(count):
             ac = row.to_dict()
+            # FAPEnv utilise 'cost_per_flight', MAPPO utilise 'cost'
+            if 'cost' in ac and 'cost_per_flight' not in ac:
+                ac['cost_per_flight'] = float(ac['cost'])
             ac['tail_number'] = f"AC_{tail_id}"
+            ac['prefix'] = prefix
             physical_fleet.append(ac)
             tail_id += 1
             
     fleet_df = pd.DataFrame(physical_fleet)
 
-    tail_to_type = {ac['tail_number']: ac['fleet_id'] for ac in physical_fleet}
-    
     env = FAPEnv(schedule_df, fleet_df, len(airports))
     env = ActionMasker(env, mask_fn)
     
@@ -55,49 +61,63 @@ def evaluate_ppo():
     terminated = False
     truncated = False
     
-    results = []
+    # Préparation de l'architecture d'export (Format MAPPO unifié)
+    schedule_df['Agent_ID'] = -1
+    schedule_df['Aircraft_Code'] = "SPILL"
+    schedule_df['Agent_Capacity'] = 0.0
+    schedule_df['Agent_Cost'] = 0.0
+    schedule_df['Margin_Generated'] = 0.0
+    schedule_df['Spill_Cost'] = 0.0
+    
     step_idx = 0
+    
+    print(f"Début de l'évaluation PPO pour {len(schedule_df)} vols...")
     
     while not (terminated or truncated):
         action_masks = env.action_masks()
         action, _ = model.predict(obs, action_masks=action_masks, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
         
-        flight = schedule_df.iloc[step_idx]
         is_spilled = (action == len(physical_fleet))
 
-        if is_spilled:
-            tail_num = 'UNASSIGNED'
-            ac_type = 'NONE'
-        else:
-            # Sécurité pour éviter les index hors limites
-            if action < len(physical_fleet):
-                tail_num = physical_fleet[action]['tail_number']
-                ac_type = tail_to_type.get(tail_num, 'UNKNOWN')
-            else:
-                tail_num = 'INVALID_INDEX'
-                ac_type = 'ERROR'
-        
-        results.append({
-            'Flight#': flight['Flight#'],
-            'Route': f"{flight['From']}->{flight['To']}",
-            'Tail_Number': tail_num,
-            'Aircraft_Type': tail_to_type.get(tail_num, 'NONE'), # Ajout de la famille
-            'Revenue': info.get('revenue', 0),
-            'Spill_Cost': info.get('spill_cost', 0),
-            'Delay_Minutes': info.get('delay_minutes', 0),
-            'Reward': reward
-        })
-        
+        if not is_spilled and action < len(physical_fleet):
+            ac = physical_fleet[action]
+            schedule_df.at[step_idx, 'Agent_ID'] = action
+            schedule_df.at[step_idx, 'Aircraft_Code'] = f"{ac['prefix']}{action}"
+            schedule_df.at[step_idx, 'Agent_Capacity'] = float(ac['capacity'])
+            
+            cout_vol = float(ac.get('cost', ac.get('cost_per_flight', 5000)))
+            schedule_df.at[step_idx, 'Agent_Cost'] = cout_vol
+            
+            # Marge financière brute du vol assigné
+            margin = info.get('revenue', 0) - cout_vol
+            schedule_df.at[step_idx, 'Margin_Generated'] = margin
+
         step_idx += 1
 
-    df_results = pd.DataFrame(results)
-    output_path = BASE_DIR / "data" / "processed" / "evaluation_results_ppo.csv"
-    df_results.to_csv(output_path, index=False, sep=';')
+    # Calcul vectorisé du coût d'opportunité (Spill) basé sur la demande
+    unmet_pax = (schedule_df['Predicted_Demand'] - schedule_df['Agent_Capacity']).clip(lower=0)
+    schedule_df['Spill_Cost'] = unmet_pax * schedule_df['Tarif']
+
+    # Application de la pénalité sur les vols orphelins
+    unassigned_mask = schedule_df['Agent_ID'] == -1
+    schedule_df.loc[unassigned_mask, 'Margin_Generated'] = -schedule_df.loc[unassigned_mask, 'Spill_Cost']
+
+    # Nettoyage des variables techniques spécifiques à l'environnement PPO avant export
+    cols_to_drop = ['Origin_Idx', 'Dest_Idx', 'Dept_Time_Minutes', 'Arr_Time_Minutes']
+    export_df = schedule_df.drop(columns=[c for c in cols_to_drop if c in schedule_df.columns])
+
+    # Modification du nom de sortie pour s'aligner sur MAPPO
+    CSV_PATH = BASE_DIR / "data" / "processed" / "ppo_allocations.csv"
+    export_df.to_csv(CSV_PATH, index=False)
     
-    print(f"Extraction terminée : {len(df_results)} vols traités.")
-    print(f"Taux d'annulation (Unassigned) : {(df_results['Tail_Number'] == 'UNASSIGNED').mean() * 100:.2f}%")
-    print(f"Fichier : {output_path}")
+    marge_totale = export_df['Margin_Generated'].sum()
+    taux_spill = (export_df['Agent_ID'] == -1).mean() * 100
+    
+    print(f"\nExtraction terminée : {step_idx} vols traités.")
+    print(f"Taux de Spill (Vols non assignés) : {taux_spill:.2f}%")
+    print(f"Marge opérationnelle absolue : {marge_totale:.2f}")
+    print(f"Export CSV terminé : {CSV_PATH}")
 
 if __name__ == "__main__":
     evaluate_ppo()
