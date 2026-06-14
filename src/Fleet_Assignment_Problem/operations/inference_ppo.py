@@ -184,63 +184,71 @@ def predict_demand_from_precomputed(df_sched, df_precomputed):
 
 
 def predict_demand_xgboost(schedule_df, xgb_model_path, mapping_path, df_history):
-    # Chargement des artefacts XGBoost
     model = xgb.XGBRegressor()
     model.load_model(xgb_model_path)
     airport_to_idx = joblib.load(mapping_path)
     
-    df_pred = schedule_df.copy()
-    df_pred['Dept Time'] = pd.to_datetime(df_pred['Dept Time'])
+    df_sched = schedule_df.copy()
+    df_sched['Dept Time'] = pd.to_datetime(df_sched['Dept Time'])
+    df_sched['Arr Time'] = pd.to_datetime(df_sched['Arr Time'])
     
-    # Création des clés de jointure
-    df_pred['date_only'] = df_pred['Dept Time'].dt.normalize()
-    df_pred['route'] = df_pred['From'] + "-" + df_pred['To']
+    routes_actives = df_history['route'].unique()
+    route_map = { (r.split('_')[1], r.split('_')[3]): r for r in routes_actives if len(r.split('_')) >= 4 }
     
-    # 1. Extraction d'un dictionnaire unique de covariables depuis l'historique
     covariates = df_history[[
         'date', 'route', 'evenement_depart', 'evenement_arrivee', 
         'vacances_depart', 'vacances_arrivee'
     ]].drop_duplicates()
     covariates['date'] = pd.to_datetime(covariates['date'])
     
-    # 2. Projection des covariables sur le planning actuel
-    df_pred = df_pred.merge(
-        covariates, 
-        left_on=['date_only', 'route'], 
-        right_on=['date', 'route'], 
-        how='left'
-    )
+    ppo_states_global = []
     
-    # 3. Remplissage de sécurité (Si un vol tombe un jour non répertorié, les valeurs sont nulles)
-    df_pred['evenement_depart'] = df_pred['evenement_depart'].fillna(0).astype(int)
-    df_pred['evenement_arrivee'] = df_pred['evenement_arrivee'].fillna(0).astype(int)
-    df_pred['vacances_depart'] = df_pred['vacances_depart'].fillna(0.0)
-    df_pred['vacances_arrivee'] = df_pred['vacances_arrivee'].fillna(0.0)
-    
-    df_pred['jour_semaine'] = df_pred['Dept Time'].dt.dayofweek
-    df_pred['mois'] = df_pred['Dept Time'].dt.month
-    df_pred['Origin_Idx'] = df_pred['From'].map(airport_to_idx).fillna(0)
-    df_pred['Dest_Idx'] = df_pred['To'].map(airport_to_idx).fillna(0)
-    
-    features = [
-        'Origin_Idx', 'Dest_Idx', 
-        'jour_semaine', 'mois', 
-        'evenement_depart', 'evenement_arrivee', 
-        'vacances_depart', 'vacances_arrivee'
-    ]
-    
-    # Prédiction et écrêtage (capacité max ou sécurité)
-    X_infer = df_pred[features]
-    predictions = model.predict(X_infer)
-    
-    # Division de la demande journalière brute par un facteur si nécessaire (ex: /3 si 3 vols par jour)
-    # L'ajustement dépend de comment vous avez configuré le LSTM
-    df_pred['flight_demand'] = predictions.clip(min=0, max=180)
-    df_pred['Predicted_Demand'] = df_pred['flight_demand']
-    
-    # Nettoyage des colonnes temporaires
-    cols_to_drop = ['date_only', 'date', 'route', 'evenement_depart', 'evenement_arrivee', 
-                    'vacances_depart', 'vacances_arrivee', 'jour_semaine', 'mois', 'Origin_Idx', 'Dest_Idx']
-    df_pred = df_pred.drop(columns=[c for c in cols_to_drop if c in df_pred.columns])
-    
-    return df_pred
+    for (code_dep, code_arr), group in df_sched.groupby(['From', 'To']):
+        route = route_map.get((code_dep, code_arr)) or route_map.get((code_arr, code_dep))
+        if route:
+            unique_dates = group['Dept Time'].dt.normalize().unique()
+            
+            df_pred = pd.DataFrame({'date': unique_dates, 'route': route})
+            df_pred['From'] = code_dep
+            df_pred['To'] = code_arr
+            
+            df_pred = df_pred.merge(covariates, on=['date', 'route'], how='left')
+            
+            df_pred['evenement_depart'] = df_pred['evenement_depart'].fillna(0).astype(int)
+            df_pred['evenement_arrivee'] = df_pred['evenement_arrivee'].fillna(0).astype(int)
+            df_pred['vacances_depart'] = df_pred['vacances_depart'].fillna(0.0)
+            df_pred['vacances_arrivee'] = df_pred['vacances_arrivee'].fillna(0.0)
+            
+            df_pred['jour_semaine'] = df_pred['date'].dt.dayofweek
+            df_pred['mois'] = df_pred['date'].dt.month
+            df_pred['Origin_Idx'] = df_pred['From'].map(airport_to_idx).fillna(0)
+            df_pred['Dest_Idx'] = df_pred['To'].map(airport_to_idx).fillna(0)
+            
+            features = [
+                'Origin_Idx', 'Dest_Idx', 
+                'jour_semaine', 'mois', 
+                'evenement_depart', 'evenement_arrivee', 
+                'vacances_depart', 'vacances_arrivee'
+            ]
+            
+            X_infer = df_pred[features]
+            predictions = model.predict(X_infer)
+            
+            df_pred['predicted_demand'] = np.round(predictions).astype(int).clip(min=0)
+            
+            df_ppo_state = map_demand_to_schedule(
+                df_pred[['date', 'route', 'predicted_demand']], 
+                group.copy(), 
+                code_dep, 
+                code_arr
+            )
+            
+            if not df_ppo_state.empty:
+                ppo_states_global.append(df_ppo_state)
+                
+    if ppo_states_global:
+        final_df = pd.concat(ppo_states_global, ignore_index=True)
+        return final_df.sort_values('Dept Time').reset_index(drop=True)
+    else:
+        df_sched['flight_demand'] = 150
+        return df_sched

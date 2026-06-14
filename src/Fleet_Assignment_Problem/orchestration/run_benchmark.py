@@ -11,6 +11,8 @@ def run_benchmark():
     RESULTS_CSV = BASE_DIR / "data" / "processed" / "benchmark_results.csv"
     
     pipelines = [
+        {"agent": "GREEDY", "predictor": "LSTM"},
+        {"agent": "GREEDY", "predictor": "XGBOOST"},
         {"agent": "PPO", "predictor": "LSTM"},
         {"agent": "PPO", "predictor": "XGBOOST"},
         {"agent": "MAPPO", "predictor": "LSTM"},
@@ -41,14 +43,17 @@ def run_benchmark():
         }
         
         try:
+            subprocess.run(["python", "src/Fleet_Assignment_Problem/orchestration/generate_eval_dataset.py"], env=env, check=True)
+            
             t0 = time.perf_counter()
             if agent == "PPO":
                 subprocess.run(["python", "src/Fleet_Assignment_Problem/orchestration/generate_pool.py"], env=env, check=True)
             metrics_record["Pool_Gen_Time_sec"] = round(time.perf_counter() - t0, 2)
             
             t0 = time.perf_counter()
-            train_script = f"src/Fleet_Assignment_Problem/models/train_{agent.lower()}.py"
-            subprocess.run(["python", train_script], env=env, check=True)
+            if agent != "GREEDY":
+                train_script = f"src/Fleet_Assignment_Problem/models/train_{agent.lower()}.py"
+                subprocess.run(["python", train_script], env=env, check=True)
             metrics_record["Train_Time_sec"] = round(time.perf_counter() - t0, 2)
             
             t0 = time.perf_counter()
@@ -70,7 +75,6 @@ def run_benchmark():
         
         df_results = pd.DataFrame(results)
         df_results.to_csv(RESULTS_CSV, index=False)
-        print(f"Pipeline {agent}-{predictor} terminé.")
 
     print(f"\nBenchmark global achevé. Registre : {RESULTS_CSV}")
 
