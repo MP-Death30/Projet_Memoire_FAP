@@ -50,13 +50,14 @@ def run_evaluation():
     policy.load_state_dict(torch.load(MODEL_PATH, map_location=device))
     policy.eval()
 
-    min_time = schedule_df['Dept Time'].min().timestamp() / 60.0
-
+    # CORRECTION : Suppression de la variable min_time. 
+    # Les tenseurs d'entrée sont désormais transmis en timestamps absolus, 
+    # symétriquement à la fonction collect_trajectories de mappo_trainer.py
     flights_data = [{
         'origin': float(airport_to_idx[r['From']]), 
         'dest': float(airport_to_idx[r['To']]), 
-        'dep_time': (r['Dept Time'].timestamp() / 60.0) - min_time, 
-        'arr_time': (r['Arr Time'].timestamp() / 60.0) - min_time, 
+        'dep_time': r['Dept Time'].timestamp() / 60.0, 
+        'arr_time': r['Arr Time'].timestamp() / 60.0, 
         'pax': float(r['Predicted_Demand']), 
         'fare': float(r['Tarif'])
     } for _, r in schedule_df.iterrows()]
@@ -103,11 +104,14 @@ def run_evaluation():
     for record in env.assignment_history:
         f_idx = record['flight_index']
         a_idx = record['agent_index']
-        schedule_df.at[f_idx, 'Agent_ID'] = a_idx
-        schedule_df.at[f_idx, 'Aircraft_Code'] = f"{physical_fleet[a_idx]['prefix']}{a_idx}"
-        schedule_df.at[f_idx, 'Agent_Capacity'] = physical_fleet[a_idx]['capacity']
-        schedule_df.at[f_idx, 'Agent_Cost'] = physical_fleet[a_idx]['cost']
-        schedule_df.at[f_idx, 'Margin_Generated'] = record['margin']
+        
+        # Sécurité : On ignore l'agent virtuel du spill (-1) pour l'extraction de la flotte physique
+        if a_idx != -1:
+            schedule_df.at[f_idx, 'Agent_ID'] = a_idx
+            schedule_df.at[f_idx, 'Aircraft_Code'] = f"{physical_fleet[a_idx]['prefix']}{a_idx}"
+            schedule_df.at[f_idx, 'Agent_Capacity'] = physical_fleet[a_idx]['capacity']
+            schedule_df.at[f_idx, 'Agent_Cost'] = physical_fleet[a_idx]['cost']
+            schedule_df.at[f_idx, 'Margin_Generated'] = record['margin']
 
     unmet_pax = (schedule_df['Predicted_Demand'] - schedule_df['Agent_Capacity']).clip(lower=0)
     schedule_df['Spill_Cost'] = unmet_pax * schedule_df['Tarif']
