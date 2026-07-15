@@ -24,6 +24,8 @@ data/processed/*
 models/*
 !data/raw/.gitkeep
 !data/benchmark/.gitkeep
+!data/benchmark/lstm/.gitkeep
+!data/benchmark/xgboost/.gitkeep
 !data/processed/.gitkeep
 !models/.gitkeep
 
