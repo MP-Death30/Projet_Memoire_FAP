@@ -19,9 +19,11 @@ build/
 # --- Données et Modèles (Critique) ---
 # On ignore tout le contenu, mais on garde les dossiers via un fichier .gitkeep si nécessaire
 data/raw/*
+data/benchmark/*
 data/processed/*
 models/*
 !data/raw/.gitkeep
+!data/benchmark/.gitkeep
 !data/processed/.gitkeep
 !models/.gitkeep
 
@@ -34,6 +36,8 @@ models/*
 *.pkl
 *.onnx
 *.weights
+
+!resultat_benchmark_multi_planning.csv
 
 # --- Configuration et Secrets ---
 .env
